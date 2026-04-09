@@ -137,6 +137,12 @@ body,
   border-left: 1px solid #20395a;
 }
 
+.session-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .sidebar-note {
   margin: 0;
   color: var(--muted);
@@ -216,6 +222,11 @@ body,
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #20395a;
+}
+
+.card-meta-bar {
   padding: 8px 10px;
   border-bottom: 1px solid #20395a;
 }

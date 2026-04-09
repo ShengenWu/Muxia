@@ -34,7 +34,7 @@
   - 最小验证：
     - `npm run build`
 
-- M2b 布局持久化 + 会话绑定联动 - `in_progress`
+- M2b 布局持久化 + 会话绑定联动 - `completed`
   - 范围：
     - 布局按 `project_id + layout_id` 隔离保存
     - SessionList 与 active session 绑定进入 Sidebar
@@ -47,7 +47,7 @@
     - `npm test -- src/state/__tests__/store.test.ts`
     - `npm run build`
 
-- M3 最小链路打通（watcher/change/diff）- `pending`
+- M3 最小链路打通（watcher/change/diff）- `in_progress`
   - 范围：
     - `file_changed` 驱动 Change Tracking 与 Diff
     - 移除 `diff.updated` 一级事实事件，Diff 数据来自文件事件/快照
@@ -86,21 +86,22 @@
 - 桌面烟测：`npm run tauri:dev`（若本机具备 Rust 工具链）
 
 ## Current Status
-- 当前里程碑：M2b（进行中）
+- 当前里程碑：M3（进行中）
 - 已完成：M1 事件契约迁移（前后端 `snake_case`），Store/后端已接受 `file_changed` 作为 diff 事实源
 - 本轮新增完成：
   - 左侧 Sidebar 骨架已落地，主界面改为 Sidebar + 工作区两栏
   - 建立前端本地 `Project -> Layout` 模型，并支持刷新恢复活动项目/布局
   - 布局存储已切到 `project_id:layout_id` 作用域
   - 修复 `SessionRecord.projectId` 契约缺口，默认绑定到当前 Alpha 项目
+  - Sidebar 已接管 SessionList，active session 切换驱动 Chat/Graph/Diff/Terminal 联动
 - 当前代码现状：
   - 前端已具备 Sidebar、双布局预设与作用域布局持久化
-  - 会话事实仍按 `session_id` 存储，会话切换入口仍位于 Chat 卡片内部
-  - Sidebar 的 SessionList 目前为占位说明，尚未接管 active session 绑定
-- 正在做：把 SessionList 移入 Sidebar，并确保会话切换不受布局切换污染
+  - 会话事实仍按 `session_id` 存储，且布局切换不会覆盖 active session 事实
+  - 仍缺少独立 Change Tracking 卡片；当前只有 Diff 卡片承接文件变更
+- 正在做：补最小 Change Tracking 卡片，并把 `file_changed -> change_tracking -> diff` 演示链路闭合
 
 ## Next Step
-- 完成 M2b：Sidebar 接管 SessionList，保持 Chat/Graph/Diff/Terminal 随 active session 联动；验证通过后提交 `feat: bind sidebar sessions to workspace layout`。
+- 完成 M3：新增 Change Tracking 卡片并复用 `selectedDiffPath` 与 Diff 联动；验证通过后提交 `feat: add change tracking card for file events`。
 
 ## Blockers
 - 暂无阻塞。

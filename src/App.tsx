@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { onBackendEvent } from "./lib/tauri";
 import { useAppStore } from "./state/store";
 import { CardLayout } from "./components/cards/CardLayout";
@@ -7,7 +7,18 @@ import { useWorkspaceState } from "./state/workspace";
 
 export default function App() {
   const appendEvent = useAppStore((s) => s.appendEvent);
+  const sessions = useAppStore((s) => s.sessions);
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const setActiveSession = useAppStore((s) => s.setActiveSession);
   const { workspace, activeProject, activeLayout, setActiveProject, setActiveLayout } = useWorkspaceState();
+
+  const projectSessions = useMemo(
+    () =>
+      Object.values(sessions)
+        .filter((session) => session.projectId === activeProject.id)
+        .sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
+    [activeProject.id, sessions]
+  );
 
   useEffect(() => {
     let dispose = () => {};
@@ -20,6 +31,17 @@ export default function App() {
     return () => dispose();
   }, [appendEvent]);
 
+  useEffect(() => {
+    if (projectSessions.length === 0) {
+      return;
+    }
+
+    const hasActiveSession = projectSessions.some((session) => session.sessionId === activeSessionId);
+    if (!hasActiveSession) {
+      setActiveSession(projectSessions[0].sessionId);
+    }
+  }, [activeSessionId, projectSessions, setActiveSession]);
+
   return (
     <main className="app-root">
       <header className="topbar">
@@ -31,8 +53,11 @@ export default function App() {
           projects={workspace.projects}
           activeProjectId={activeProject.id}
           activeLayoutId={activeLayout.id}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
           onProjectChange={setActiveProject}
           onLayoutChange={setActiveLayout}
+          onSessionChange={setActiveSession}
         />
         <section className="workspace-main">
           <div className="workspace-status">

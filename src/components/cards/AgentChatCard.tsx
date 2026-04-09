@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import { tauriInvoke } from "../../lib/tauri";
 import { useAppStore } from "../../state/store";
 
@@ -6,16 +6,10 @@ export function AgentChatCard() {
   const [draft, setDraft] = useState("");
   const [adapter, setAdapter] = useState<"claude" | "codex">("claude");
   const activeSessionId = useAppStore((s) => s.activeSessionId);
-  const sessions = useAppStore((s) => s.sessions);
   const messages = useAppStore((s) =>
     activeSessionId ? s.messages[activeSessionId] ?? [] : []
   );
   const setActiveSession = useAppStore((s) => s.setActiveSession);
-
-  const orderedSessions = useMemo(
-    () => Object.values(sessions).sort((a, b) => a.startedAt.localeCompare(b.startedAt)),
-    [sessions]
-  );
 
   const onCreateSession = async () => {
     const created = await tauriInvoke<{ sessionId: string }>("create_session", {
@@ -53,17 +47,12 @@ export function AgentChatCard() {
           </button>
         </div>
       </header>
-      <div className="session-list">
-        {orderedSessions.map((session) => (
-          <button
-            className={session.sessionId === activeSessionId ? "session-pill active" : "session-pill"}
-            key={session.sessionId}
-            onClick={() => setActiveSession(session.sessionId)}
-            type="button"
-          >
-            {session.agentType}:{session.sessionId.slice(0, 8)}
-          </button>
-        ))}
+      <div className="card-meta-bar">
+        {activeSessionId ? (
+          <span className="muted">active session {activeSessionId.slice(0, 8)}</span>
+        ) : (
+          <span className="muted">Create a session to start the chain.</span>
+        )}
       </div>
       <div className="chat-log">
         {messages.map((message) => (
