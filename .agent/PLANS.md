@@ -22,18 +22,30 @@
   - 最小验证：
     - `npm test -- src/state/__tests__/store.test.ts`
 
-- M2 Sidebar + 多布局（前端最小可用）- `in_progress`
+- M2a Sidebar 骨架 + 项目/布局本地模型 - `completed`
   - 范围：
-    - 左侧常驻：ProjectTree/LayoutList/SessionList
-    - 主区右侧卡片栅格，布局可切换、可持久化
-    - 同项目下支持多个布局（本地持久化）
+    - 新增左侧常驻 Sidebar 容器
+    - 以前端本地持久化建立最小 `Project -> Layout` 模型
+    - 主区改为“侧边栏 + 卡片工作区”两栏结构
   - 验收：
-    - 根节点为项目，子节点为布局
-    - 切布局仅影响卡片排布，不污染会话事实
-    - 会话点击可联动当前会话
+    - 左侧可见当前项目与布局列表
+    - 可切换活动布局
+    - 刷新后仍能恢复活动项目与布局
   - 最小验证：
     - `npm run build`
-    - 手工 smoke：切换布局与会话
+
+- M2b 布局持久化 + 会话绑定联动 - `in_progress`
+  - 范围：
+    - 布局按 `project_id + layout_id` 隔离保存
+    - SessionList 与 active session 绑定进入 Sidebar
+    - 切换布局不影响会话事实数据；切换会话联动 Chat/Graph/Diff/Terminal
+  - 验收：
+    - 同项目多布局可独立保存卡片排布
+    - 会话点击后主工作区卡片绑定到该会话
+    - 不同布局切换后 session data 不丢失、不串线
+  - 最小验证：
+    - `npm test -- src/state/__tests__/store.test.ts`
+    - `npm run build`
 
 - M3 最小链路打通（watcher/change/diff）- `pending`
   - 范围：
@@ -63,8 +75,8 @@
 ## Acceptance Criteria（今晚）
 - AC1：事件契约统一为 `snake_case`，前后端一致。
 - AC2：左侧侧边栏常驻，按“项目 -> 布局”组织，布局可切换。
-- AC3：右侧主区全部为卡片，可自由调整布局并持久化。
-- AC4：会话列表按项目上下文显示，点击会话可联动 Chat/Graph/Diff。
+- AC3：右侧主区全部为卡片，布局按 `project_id + layout_id` 持久化。
+- AC4：会话列表按当前项目显示，点击会话可联动 Chat/Graph/Diff/Terminal。
 - AC5：形成最小演示链路并可重复验证。
 
 ## Validation Commands
@@ -74,12 +86,21 @@
 - 桌面烟测：`npm run tauri:dev`（若本机具备 Rust 工具链）
 
 ## Current Status
-- 当前里程碑：M2（进行中）
-- 已完成：M1 事件契约迁移（前后端 `snake_case`），并清理旧 `.js` 镜像文件避免测试解析歧义
-- 正在做：左侧 Sidebar 与多布局最小可用实现
+- 当前里程碑：M2b（进行中）
+- 已完成：M1 事件契约迁移（前后端 `snake_case`），Store/后端已接受 `file_changed` 作为 diff 事实源
+- 本轮新增完成：
+  - 左侧 Sidebar 骨架已落地，主界面改为 Sidebar + 工作区两栏
+  - 建立前端本地 `Project -> Layout` 模型，并支持刷新恢复活动项目/布局
+  - 布局存储已切到 `project_id:layout_id` 作用域
+  - 修复 `SessionRecord.projectId` 契约缺口，默认绑定到当前 Alpha 项目
+- 当前代码现状：
+  - 前端已具备 Sidebar、双布局预设与作用域布局持久化
+  - 会话事实仍按 `session_id` 存储，会话切换入口仍位于 Chat 卡片内部
+  - Sidebar 的 SessionList 目前为占位说明，尚未接管 active session 绑定
+- 正在做：把 SessionList 移入 Sidebar，并确保会话切换不受布局切换污染
 
 ## Next Step
-- 完成 Sidebar（项目->布局->会话）与右侧卡片区联动，验证后提交 `feat: add persistent sidebar with project-layout navigation`。
+- 完成 M2b：Sidebar 接管 SessionList，保持 Chat/Graph/Diff/Terminal 随 active session 联动；验证通过后提交 `feat: bind sidebar sessions to workspace layout`。
 
 ## Blockers
 - 暂无阻塞。

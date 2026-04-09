@@ -8,6 +8,7 @@ import type {
   GraphEdge,
   SessionRecord
 } from "../types/events";
+import { DEFAULT_PROJECT_ID } from "./workspace";
 
 interface AppState {
   sessions: Record<string, SessionRecord>;
@@ -70,12 +71,14 @@ export const useAppStore = create<AppState>((set) => ({
         const payload = event.payload as {
           agent_type?: "claude" | "codex";
           adapter?: "claude" | "codex";
+          project_id?: string;
           cwd: string;
         };
         next.sessions = {
           ...state.sessions,
           [sessionId]: {
             sessionId,
+            projectId: payload.project_id ?? DEFAULT_PROJECT_ID,
             agentType: payload.agent_type ?? payload.adapter ?? "claude",
             cwd: payload.cwd,
             startedAt: event.ts
