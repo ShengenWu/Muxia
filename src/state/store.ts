@@ -200,7 +200,7 @@ export const useAppStore = create<AppState>((set) => ({
           ...state.diffs,
           [sessionId]: updated
         };
-        if (!state.selectedDiffPath) {
+        if (!state.selectedDiffPath || state.activeSessionId === sessionId) {
           next.selectedDiffPath = nextArtifact.path;
         }
       }

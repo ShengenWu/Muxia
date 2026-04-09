@@ -24,15 +24,17 @@ const STORAGE_KEY = "new-terminal-workspace";
 const operationsLayout: Layout[] = [
   { i: "chat", x: 0, y: 0, w: 4, h: 7 },
   { i: "graph", x: 4, y: 0, w: 4, h: 7 },
-  { i: "diff", x: 8, y: 0, w: 4, h: 7 },
-  { i: "terminal", x: 0, y: 7, w: 12, h: 6 }
+  { i: "change_tracking", x: 8, y: 0, w: 4, h: 7 },
+  { i: "diff", x: 0, y: 7, w: 7, h: 6 },
+  { i: "terminal", x: 7, y: 7, w: 5, h: 6 }
 ];
 
 const reviewLayout: Layout[] = [
-  { i: "chat", x: 0, y: 0, w: 5, h: 6 },
-  { i: "diff", x: 5, y: 0, w: 7, h: 8 },
-  { i: "graph", x: 0, y: 6, w: 5, h: 7 },
-  { i: "terminal", x: 5, y: 8, w: 7, h: 5 }
+  { i: "chat", x: 0, y: 0, w: 4, h: 6 },
+  { i: "change_tracking", x: 4, y: 0, w: 3, h: 6 },
+  { i: "diff", x: 7, y: 0, w: 5, h: 8 },
+  { i: "graph", x: 0, y: 6, w: 7, h: 7 },
+  { i: "terminal", x: 7, y: 8, w: 5, h: 5 }
 ];
 
 export const DEFAULT_PROJECT_ID = "project_alpha";

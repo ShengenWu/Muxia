@@ -47,7 +47,7 @@
     - `npm test -- src/state/__tests__/store.test.ts`
     - `npm run build`
 
-- M3 最小链路打通（watcher/change/diff）- `in_progress`
+- M3 最小链路打通（watcher/change/diff）- `completed`
   - 范围：
     - `file_changed` 驱动 Change Tracking 与 Diff
     - 移除 `diff.updated` 一级事实事件，Diff 数据来自文件事件/快照
@@ -58,7 +58,7 @@
     - `npm test`
     - `npm run build`
 
-- M4 收口验证与评审 - `pending`
+- M4 收口验证与评审 - `in_progress`
   - 范围：
     - 运行全量基线验证
     - 依据 `.agent/code_review.md` 做一次 reviewer 复核
@@ -86,7 +86,7 @@
 - 桌面烟测：`npm run tauri:dev`（若本机具备 Rust 工具链）
 
 ## Current Status
-- 当前里程碑：M3（进行中）
+- 当前里程碑：M4（进行中）
 - 已完成：M1 事件契约迁移（前后端 `snake_case`），Store/后端已接受 `file_changed` 作为 diff 事实源
 - 本轮新增完成：
   - 左侧 Sidebar 骨架已落地，主界面改为 Sidebar + 工作区两栏
@@ -94,14 +94,16 @@
   - 布局存储已切到 `project_id:layout_id` 作用域
   - 修复 `SessionRecord.projectId` 契约缺口，默认绑定到当前 Alpha 项目
   - Sidebar 已接管 SessionList，active session 切换驱动 Chat/Graph/Diff/Terminal 联动
+  - 独立 Change Tracking 卡片已接入布局，并与 Diff 共用 `selectedDiffPath` 联动
 - 当前代码现状：
   - 前端已具备 Sidebar、双布局预设与作用域布局持久化
   - 会话事实仍按 `session_id` 存储，且布局切换不会覆盖 active session 事实
-  - 仍缺少独立 Change Tracking 卡片；当前只有 Diff 卡片承接文件变更
-- 正在做：补最小 Change Tracking 卡片，并把 `file_changed -> change_tracking -> diff` 演示链路闭合
+  - `file_changed -> change_tracking -> diff` 前端链路已闭合
+  - watcher 仍以 `last_active_session` 绑定文件事件，是当前最主要剩余风险
+- 正在做：运行收口验证、桌面烟测与 reviewer 复核，记录剩余风险和下一步
 
 ## Next Step
-- 完成 M3：新增 Change Tracking 卡片并复用 `selectedDiffPath` 与 Diff 联动；验证通过后提交 `feat: add change tracking card for file events`。
+- 完成 M4：补 reviewer 结论、执行桌面烟测（若环境允许），回写 `.agent/code_review.md` 与最终风险。
 
 ## Blockers
 - 暂无阻塞。

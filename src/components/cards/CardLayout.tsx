@@ -1,5 +1,6 @@
 import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
 import { AgentChatCard } from "./AgentChatCard";
+import { ChangeTrackingCard } from "./ChangeTrackingCard";
 import { DiffCard } from "./DiffCard";
 import { SessionGraphCard } from "./SessionGraphCard";
 import { TerminalCard } from "./TerminalCard";
@@ -46,6 +47,7 @@ export function CardLayout({ storageScope, defaultLayout }: CardLayoutProps) {
     >
       <div key="chat" className="grid-item"><AgentChatCard /></div>
       <div key="graph" className="grid-item"><SessionGraphCard /></div>
+      <div key="change_tracking" className="grid-item"><ChangeTrackingCard /></div>
       <div key="diff" className="grid-item"><DiffCard /></div>
       <div key="terminal" className="grid-item"><TerminalCard /></div>
     </ResponsiveGridLayout>
