@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { isTauriRuntime, onBackendEvent, tauriInvoke } from "./lib/tauri";
 import { DiagnosticsPanel } from "./components/system/DiagnosticsPanel";
 import { markRuntimeHealthy, runtimeLogger } from "./lib/runtimeDiagnostics";
@@ -13,6 +13,7 @@ export default function App() {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const { workspace, activeProject, activeLayout, setActiveProject, setActiveLayout } = useWorkspaceState();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const projectSessions = useMemo(
     () =>
@@ -85,19 +86,58 @@ export default function App() {
     });
   }, [activeLayout.id, activeProject.id, activeSessionId]);
 
+  const handleProjectCreate = () => {
+    runtimeLogger.info("shell", "Project create requested before bootstrap milestone");
+  };
+
+  const handleCardCreate = () => {
+    runtimeLogger.info("shell", "Card create requested before pane milestone", {
+      projectId: activeProject.id,
+      layoutId: activeLayout.id
+    });
+  };
+
   return (
     <main className="app-root">
       <header className="topbar">
-        <h1>new-terminal</h1>
-        <p>Agent workflow workspace: chat, action graph, diff and terminal.</p>
+        <div className="topbar-group topbar-group-left">
+          <div className="traffic-lights" aria-hidden="true">
+            <span className="traffic-light traffic-light-close" />
+            <span className="traffic-light traffic-light-minimize" />
+            <span className="traffic-light traffic-light-expand" />
+          </div>
+          <button className="shell-icon-button" type="button" onClick={handleProjectCreate}>
+            +
+          </button>
+          <button
+            className="shell-icon-button shell-toggle-button"
+            type="button"
+            onClick={() => setSidebarCollapsed((current) => !current)}
+          >
+            {sidebarCollapsed ? "[>]" : "[|]"}
+          </button>
+        </div>
+        <div className="topbar-title">
+          <strong>{activeProject.name}</strong>
+          <span>{activeLayout.name}</span>
+        </div>
+        <div className="topbar-group topbar-group-right">
+          <button className="shell-icon-button" type="button">
+            !
+          </button>
+          <button className="shell-icon-button" type="button" onClick={handleCardCreate}>
+            +
+          </button>
+        </div>
       </header>
-      <div className="workspace-shell">
+      <div className={sidebarCollapsed ? "workspace-shell sidebar-collapsed" : "workspace-shell"}>
         <Sidebar
           projects={workspace.projects}
           activeProjectId={activeProject.id}
           activeLayoutId={activeLayout.id}
           sessions={sessions}
           activeSessionId={activeSessionId}
+          collapsed={sidebarCollapsed}
           onProjectChange={setActiveProject}
           onLayoutChange={setActiveLayout}
           onSessionChange={setActiveSession}

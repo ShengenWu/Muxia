@@ -8,6 +8,7 @@ interface SidebarProps {
   activeLayoutId: string;
   sessions: Record<string, SessionRecord>;
   activeSessionId?: string;
+  collapsed?: boolean;
   onProjectChange: (projectId: string) => void;
   onLayoutChange: (layoutId: string) => void;
   onSessionChange: (sessionId: string) => void;
@@ -19,6 +20,7 @@ export function Sidebar({
   activeLayoutId,
   sessions,
   activeSessionId,
+  collapsed = false,
   onProjectChange,
   onLayoutChange,
   onSessionChange
@@ -32,7 +34,35 @@ export function Sidebar({
   );
 
   return (
-    <aside className="sidebar-shell">
+    <aside className={collapsed ? "sidebar-shell collapsed" : "sidebar-shell"}>
+      {collapsed ? (
+        <>
+          <div className="sidebar-compact-block">
+            <span className="sidebar-compact-kicker">P</span>
+            <button
+              className="nav-subitem active sidebar-compact-item"
+              type="button"
+              onClick={() => onProjectChange(activeProjectId)}
+            >
+              {projects.find((project) => project.id === activeProjectId)?.name.slice(0, 1) ?? "P"}
+            </button>
+          </div>
+          <div className="sidebar-compact-block">
+            <span className="sidebar-compact-kicker">S</span>
+            {projectSessions.slice(0, 4).map((session) => (
+              <button
+                key={session.sessionId}
+                className={session.sessionId === activeSessionId ? "nav-subitem active sidebar-compact-item" : "nav-subitem sidebar-compact-item"}
+                type="button"
+                onClick={() => onSessionChange(session.sessionId)}
+              >
+                {session.agentType.slice(0, 1).toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
       <div className="sidebar-section">
         <p className="sidebar-kicker">Project Tree</p>
         {projects.map((project) => (
@@ -80,6 +110,8 @@ export function Sidebar({
           <p className="sidebar-note">No sessions for the active project yet. Start one from the chat card.</p>
         )}
       </div>
+        </>
+      )}
     </aside>
   );
 }
