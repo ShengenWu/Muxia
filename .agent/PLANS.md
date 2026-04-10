@@ -24,7 +24,7 @@
   - 最小验证：
     - `npm run build`
 
-- M2 项目导入与 layout bootstrap - `in_progress`
+- M2 项目导入与 layout bootstrap - `completed`
   - 范围：
     - Tauri 新增目录选择命令
     - 前端新增 `createOrActivateProjectFromPath`
@@ -37,7 +37,7 @@
     - `npm run build`
     - `npm run tauri:dev`
 
-- M3 Pane workspace engine - `pending`
+- M3 Pane workspace engine - `in_progress`
   - 范围：
     - 用 pane split 模型替换静态 grid
     - 支持单卡全屏、双卡 1/2 分布、多卡自动分区
@@ -82,22 +82,23 @@
 
 ## Current Status
 - 当前 change：`redesign-cmux-workbench-ui`
-- 当前里程碑：M2 项目导入与 layout bootstrap
+- 当前里程碑：M3 Pane workspace engine
 - 已完成：OpenSpec proposal/design/specs/tasks 已全部创建并通过 `openspec validate`
 - 现状判断：
   - 当前 `App` 已切为 cmux 风格顶栏，具备交通灯区、项目 `+`、侧栏折叠、通知与卡片 `+`
   - `Sidebar` 已切为灰黑主题并支持折叠态
   - 全局 shell / card 已切换到黑白暗橙主题，并移除圆角
-  - `workspace.ts` 仍以旧的 `defaultGrid` 持久化模型驱动布局
+  - Tauri 已新增 `pick_project_directory` 命令，macOS 下通过原生 Finder 文件夹选择框返回路径
+  - `workspace.ts` 已支持按 `rootPath` 创建/复用项目，并为新项目自动生成默认 layouts
   - `CardLayout` 仍是静态 CSS grid，不支持 pane split 或卡片动态增删
   - 运行期诊断与启动恢复保护已经可用，必须在 redesign 中保留
 - 当前执行策略：
   - M1 已完成并通过 `npm run build`
-  - 当前进入目录选择和项目 bootstrap
+  - M2 已完成，`npm test -- src/state/__tests__/store.test.ts`、`npm run build`、`npm run tauri:dev` 已通过
   - 最后替换 pane engine 与布局持久化
 
 ## Next Step
-- 增加 Tauri 原生目录选择命令，并让左侧 `+` 真正创建项目与默认 layout
+- 用 pane split 模型替换静态 `CardLayout`，并接入右上 `+` 的动态卡片新增与尺寸持久化
 
 ## Blockers
 - 暂无

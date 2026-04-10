@@ -11,6 +11,7 @@ export interface WorkspaceLayoutPreset {
 export interface WorkspaceProject {
   id: string;
   name: string;
+  rootPath: string;
   layouts: WorkspaceLayoutPreset[];
 }
 
@@ -26,7 +27,7 @@ interface PersistedWorkspaceSnapshot {
 }
 
 const STORAGE_KEY = "new-terminal-workspace";
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 
 const operationsLayout: Layout[] = [
   { i: "chat", x: 0, y: 0, w: 4, h: 7 },
@@ -46,15 +47,36 @@ const reviewLayout: Layout[] = [
 
 export const DEFAULT_PROJECT_ID = "project_alpha";
 
+export const buildDefaultLayouts = (): WorkspaceLayoutPreset[] => [
+  { id: "layout_ops", name: "Ops Board", defaultGrid: operationsLayout },
+  { id: "layout_review", name: "Review Board", defaultGrid: reviewLayout }
+];
+
+const createProjectNameFromPath = (rootPath: string): string => {
+  const trimmed = rootPath.replace(/[\\/]+$/, "");
+  const segments = trimmed.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] || "Imported Project";
+};
+
+export const createProjectIdFromPath = (rootPath: string): string => {
+  const normalized = rootPath.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return `project_${normalized || "imported"}`;
+};
+
+export const createWorkspaceProjectFromPath = (rootPath: string): WorkspaceProject => ({
+  id: createProjectIdFromPath(rootPath),
+  name: createProjectNameFromPath(rootPath),
+  rootPath,
+  layouts: buildDefaultLayouts()
+});
+
 const defaultWorkspace = (): WorkspaceSnapshot => ({
   projects: [
     {
       id: DEFAULT_PROJECT_ID,
       name: "Alpha Workbench",
-      layouts: [
-        { id: "layout_ops", name: "Ops Board", defaultGrid: operationsLayout },
-        { id: "layout_review", name: "Review Board", defaultGrid: reviewLayout }
-      ]
+      rootPath: "/alpha-workbench",
+      layouts: buildDefaultLayouts()
     }
   ],
   activeProjectId: DEFAULT_PROJECT_ID,
@@ -86,6 +108,35 @@ const isValidLayoutItem = (value: unknown): value is Layout => {
   );
 };
 
+const normalizeWorkspace = (snapshot: WorkspaceSnapshot): WorkspaceSnapshot | null => {
+  if (!Array.isArray(snapshot.projects) || !snapshot.activeProjectId || !snapshot.activeLayoutId) {
+    return null;
+  }
+
+  const normalizedProjects = snapshot.projects
+    .map((project) => ({
+      ...project,
+      rootPath: typeof project.rootPath === "string" ? project.rootPath : "",
+      layouts: Array.isArray(project.layouts)
+        ? project.layouts.filter((layout) => isLayoutArray(layout.defaultGrid))
+        : []
+    }))
+    .filter((project) => project.rootPath && project.layouts.length > 0);
+
+  if (normalizedProjects.length === 0) {
+    return null;
+  }
+
+  const activeProject = normalizedProjects.find((project) => project.id === snapshot.activeProjectId) ?? normalizedProjects[0];
+  const activeLayout = activeProject.layouts.find((layout) => layout.id === snapshot.activeLayoutId) ?? activeProject.layouts[0];
+
+  return {
+    projects: normalizedProjects,
+    activeProjectId: activeProject.id,
+    activeLayoutId: activeLayout.id
+  };
+};
+
 const loadWorkspace = (): WorkspaceSnapshot => {
   if (typeof window === "undefined") {
     runtimeLogger.info("workspace", "Loading default workspace outside browser window");
@@ -111,42 +162,42 @@ const loadWorkspace = (): WorkspaceSnapshot => {
       return defaultWorkspace();
     }
 
-    if (!Array.isArray(snapshot.projects) || !snapshot.activeProjectId || !snapshot.activeLayoutId) {
+    const normalized = normalizeWorkspace(snapshot);
+    if (!normalized) {
       runtimeLogger.warn("workspace", "Stored workspace snapshot invalid; using defaults", snapshot);
       window.localStorage.removeItem(STORAGE_KEY);
       return defaultWorkspace();
     }
 
-    const normalizedProjects = snapshot.projects
-      .map((project) => ({
-        ...project,
-        layouts: Array.isArray(project.layouts)
-          ? project.layouts.filter((layout) => isLayoutArray(layout.defaultGrid))
-          : []
-      }))
-      .filter((project) => project.layouts.length > 0);
-
-    if (normalizedProjects.length === 0) {
-      runtimeLogger.warn("workspace", "Stored workspace has no valid projects; using defaults");
-      window.localStorage.removeItem(STORAGE_KEY);
-      return defaultWorkspace();
-    }
-
     runtimeLogger.info("workspace", "Loaded workspace snapshot", {
-      activeProjectId: snapshot.activeProjectId,
-      activeLayoutId: snapshot.activeLayoutId,
-      projectCount: normalizedProjects.length
+      activeProjectId: normalized.activeProjectId,
+      activeLayoutId: normalized.activeLayoutId,
+      projectCount: normalized.projects.length
     });
-    return {
-      projects: normalizedProjects,
-      activeProjectId: snapshot.activeProjectId,
-      activeLayoutId: snapshot.activeLayoutId
-    };
+    return normalized;
   } catch {
     runtimeLogger.error("workspace", "Failed to parse workspace snapshot; using defaults");
     window.localStorage.removeItem(STORAGE_KEY);
     return defaultWorkspace();
   }
+};
+
+export const upsertProjectFromPath = (current: WorkspaceSnapshot, rootPath: string): WorkspaceSnapshot => {
+  const existingProject = current.projects.find((project) => project.rootPath === rootPath);
+  if (existingProject) {
+    return {
+      ...current,
+      activeProjectId: existingProject.id,
+      activeLayoutId: existingProject.layouts[0]?.id ?? current.activeLayoutId
+    };
+  }
+
+  const nextProject = createWorkspaceProjectFromPath(rootPath);
+  return {
+    projects: [...current.projects, nextProject],
+    activeProjectId: nextProject.id,
+    activeLayoutId: nextProject.layouts[0].id
+  };
 };
 
 export function useWorkspaceState() {
@@ -202,11 +253,23 @@ export function useWorkspaceState() {
     }));
   };
 
+  const createOrActivateProjectFromPath = (rootPath: string) => {
+    const normalizedPath = rootPath.trim();
+    if (!normalizedPath) {
+      runtimeLogger.warn("workspace", "Ignoring empty project import path");
+      return;
+    }
+
+    runtimeLogger.info("workspace", "Importing project from path", { rootPath: normalizedPath });
+    setWorkspace((current) => upsertProjectFromPath(current, normalizedPath));
+  };
+
   return {
     workspace,
     activeProject,
     activeLayout,
     setActiveProject,
-    setActiveLayout
+    setActiveLayout,
+    createOrActivateProjectFromPath
   };
 }

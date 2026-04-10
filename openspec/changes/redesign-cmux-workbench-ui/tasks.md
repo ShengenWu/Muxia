@@ -6,9 +6,9 @@
 
 ## 2. Project bootstrap flow
 
-- [ ] 2.1 Add a Tauri command that opens a native directory picker and returns the selected project path.
-- [ ] 2.2 Extend workspace state to create or reuse project records from imported paths and bootstrap default layouts.
-- [ ] 2.3 Wire the left `+` action to the project picker flow and select the imported project/layout on success.
+- [x] 2.1 Add a Tauri command that opens a native directory picker and returns the selected project path.
+- [x] 2.2 Extend workspace state to create or reuse project records from imported paths and bootstrap default layouts.
+- [x] 2.3 Wire the left `+` action to the project picker flow and select the imported project/layout on success.
 
 ## 3. Pane workspace engine
 

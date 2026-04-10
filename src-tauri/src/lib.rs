@@ -17,6 +17,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, State};
 use watcher::start_workspace_watcher;
@@ -99,6 +100,12 @@ struct AppState {
 #[serde(rename_all = "camelCase")]
 struct CreateSessionResponse {
     session_id: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PickProjectDirectoryResponse {
+    path: Option<String>,
 }
 
 #[tauri::command]
@@ -323,6 +330,42 @@ fn end_session(app: AppHandle, state: State<'_, AppState>, session_id: String) -
     Ok(())
 }
 
+#[tauri::command]
+fn pick_project_directory() -> Result<PickProjectDirectoryResponse, String> {
+    eprintln!("[info] [command] pick_project_directory");
+
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("osascript")
+            .arg("-e")
+            .arg("try")
+            .arg("-e")
+            .arg("POSIX path of (choose folder with prompt \"Select a project folder\")")
+            .arg("-e")
+            .arg("on error number -128")
+            .arg("-e")
+            .arg("return \"\"")
+            .arg("-e")
+            .arg("end try")
+            .output()
+            .map_err(|err| err.to_string())?;
+
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return Ok(PickProjectDirectoryResponse {
+            path: if path.is_empty() { None } else { Some(path) },
+        });
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("pick_project_directory is currently implemented only for macOS".to_string())
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
@@ -342,7 +385,8 @@ pub fn run() {
             send_user_message,
             write_pty,
             set_active_session,
-            end_session
+            end_session,
+            pick_project_directory
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

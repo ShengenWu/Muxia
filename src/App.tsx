@@ -12,7 +12,14 @@ export default function App() {
   const sessions = useAppStore((s) => s.sessions);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
-  const { workspace, activeProject, activeLayout, setActiveProject, setActiveLayout } = useWorkspaceState();
+  const {
+    workspace,
+    activeProject,
+    activeLayout,
+    setActiveProject,
+    setActiveLayout,
+    createOrActivateProjectFromPath
+  } = useWorkspaceState();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const projectSessions = useMemo(
@@ -85,8 +92,22 @@ export default function App() {
     });
   }, [activeLayout.id, activeProject.id, activeSessionId]);
 
-  const handleProjectCreate = () => {
-    runtimeLogger.info("shell", "Project create requested before bootstrap milestone");
+  const handleProjectCreate = async () => {
+    if (!isTauriRuntime()) {
+      runtimeLogger.warn("shell", "Project import requested outside Tauri runtime");
+      return;
+    }
+
+    try {
+      const response = await tauriInvoke<{ path: string | null }>("pick_project_directory");
+      if (!response.path) {
+        runtimeLogger.info("shell", "Project import canceled by user");
+        return;
+      }
+      createOrActivateProjectFromPath(response.path);
+    } catch (error) {
+      runtimeLogger.error("shell", "Failed to import project directory", { error });
+    }
   };
 
   const handleCardCreate = () => {
@@ -105,7 +126,12 @@ export default function App() {
             <span className="traffic-light traffic-light-minimize" />
             <span className="traffic-light traffic-light-expand" />
           </div>
-          <button className="shell-icon-button" type="button" onClick={handleProjectCreate} title="Add project">
+          <button
+            className="shell-icon-button"
+            type="button"
+            onClick={() => void handleProjectCreate()}
+            title="Add project"
+          >
             +
           </button>
           <button
