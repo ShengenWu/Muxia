@@ -9,6 +9,11 @@
   - 主工作区卡片化自由布局
   - `snake_case` 事件契约统一与前后端联动
   - 最小链路 `message_user -> action_tool_call -> file_changed -> change/diff 展示`
+- 修复桌面端白屏并补齐工程级运行期诊断：
+  - 根级错误边界
+  - 前端结构化日志
+  - 后端关键链路日志
+  - 窗口内可见诊断面板
 
 ## Milestones
 - M1 `snake_case` 事件契约落地（前后端）- `completed`
@@ -72,6 +77,21 @@
     - `npm run build`
     - `npm run tauri:dev`（若环境允许）
 
+- M5 白屏诊断与日志骨架 - `in_progress`
+  - 范围：
+    - 根级 `ErrorBoundary` 与全局错误捕获
+    - 前端内存日志缓冲与可见诊断面板
+    - Tauri 前后端关键链路日志埋点
+    - 保证即使卡片异常，窗口内仍能看到错误与最近日志
+  - 验收：
+    - 桌面端若再发生运行时错误，窗口内可见错误摘要与最近日志
+    - 前端启动、会话切换、Tauri 调用、后端事件、后端命令路径均有结构化日志
+    - `npm test`、`npm run build`、`npm run tauri:dev` 通过
+  - 最小验证：
+    - `npm test`
+    - `npm run build`
+    - `npm run tauri:dev`
+
 ## Acceptance Criteria（今晚）
 - AC1：事件契约统一为 `snake_case`，前后端一致。
 - AC2：左侧侧边栏常驻，按“项目 -> 布局”组织，布局可切换。
@@ -86,7 +106,7 @@
 - 桌面烟测：`npm run tauri:dev`（若本机具备 Rust 工具链）
 
 ## Current Status
-- 当前里程碑：全部里程碑已完成（Tonight P0 closed）
+- 当前里程碑：M5（进行中）
 - 已完成：M1 事件契约迁移（前后端 `snake_case`），Store/后端已接受 `file_changed` 作为 diff 事实源
 - 本轮新增完成：
   - 左侧 Sidebar 骨架已落地，主界面改为 Sidebar + 工作区两栏
@@ -101,16 +121,20 @@
   - `file_changed -> change_tracking -> diff` 前端链路已闭合
   - 前端 active session 已同步到后端 `set_active_session`，降低 watcher 归因串线风险
   - watcher 仍以 `last_active_session` 做文件归因，快速切换会话时仍有时序风险
+  - 桌面端仍存在运行时白屏，当前缺乏窗口内可见的错误与日志通路
 - 已完成收口：
   - `npm test` 通过
   - `npm run build` 通过
   - `npm run tauri:dev` 已成功编译并启动 `target/debug/new-terminal`
   - reviewer 复核：无阻断级问题，保留一个低级时序风险
+- 正在做：
+  - 为桌面端增加工程级运行期诊断骨架，并以此继续定位白屏根因
 
 ## Next Step
-- 下一步候选：
-  - 将 watcher 的文件变更归因从全局 `last_active_session` 升级为更稳健的 session 绑定策略
-  - 为桌面端关键链路补自动化 smoke / integration tests
+- 先完成 M5：让窗口内总能显示错误摘要和最近日志，再基于日志继续收敛白屏根因。
 
 ## Blockers
-- 无阻断；保留低级风险：快速切换 active session 与文件落盘同时发生时，`file_changed` 仍可能短暂归入旧 session。
+- 当前阻塞点：桌面端出现运行时白屏，用户无法直接从窗口内获取错误信息。
+- 已尝试方法：移除 `react-grid-layout`、降级 `monaco/xterm` 重型组件。
+- 失败证据：窗口出现短暂 UI 后回到空白，说明仍有运行期异常未被窗口内捕获。
+- 最小解阻步骤：加入根级错误边界、全局错误捕获和可见日志面板，再重跑桌面端定位剩余异常。

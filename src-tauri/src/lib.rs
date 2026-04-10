@@ -63,6 +63,13 @@ impl AppRuntime {
                 .unwrap_or_else(|| "global".to_string());
 
             let path_str = path.to_string_lossy().to_string();
+            eprintln!(
+                "[info] [watcher] file change path={} session_id={} before_len={} after_len={}",
+                path_str,
+                session_id,
+                before.len(),
+                after.len()
+            );
             let file_changed_event = EventEnvelope::new(
                 session_id.clone(),
                 EventSource::FsWatcher,
@@ -101,6 +108,10 @@ fn create_session(
     adapter: String,
     cwd: String,
 ) -> Result<CreateSessionResponse, String> {
+    eprintln!(
+        "[info] [command] create_session adapter={} cwd={}",
+        adapter, cwd
+    );
     let session_id = uuid::Uuid::new_v4().to_string();
     let adapter_impl: Arc<dyn AgentAdapter> = match adapter.as_str() {
         "claude" => Arc::new(ClaudeAdapter::default()),
@@ -211,6 +222,11 @@ fn send_user_message(
     session_id: String,
     content: String,
 ) -> Result<(), String> {
+    eprintln!(
+        "[info] [command] send_user_message session_id={} content_len={}",
+        session_id,
+        content.len()
+    );
     let event = EventEnvelope::new(
         session_id.clone(),
         EventSource::System,
@@ -243,6 +259,11 @@ fn send_user_message(
 
 #[tauri::command]
 fn write_pty(state: State<'_, AppState>, session_id: String, data: String) -> Result<(), String> {
+    eprintln!(
+        "[debug] [command] write_pty session_id={} data_len={}",
+        session_id,
+        data.len()
+    );
     let mut map = state.runtime.sessions.lock().map_err(|_| "sessions lock poisoned")?;
     let runtime = map
         .get_mut(&session_id)
@@ -261,6 +282,10 @@ fn write_pty(state: State<'_, AppState>, session_id: String, data: String) -> Re
 
 #[tauri::command]
 fn set_active_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    eprintln!(
+        "[info] [command] set_active_session session_id={}",
+        session_id
+    );
     let map = state.runtime.sessions.lock().map_err(|_| "sessions lock poisoned")?;
     if !map.contains_key(&session_id) {
         return Err("session not found".to_string());
@@ -278,6 +303,10 @@ fn set_active_session(state: State<'_, AppState>, session_id: String) -> Result<
 
 #[tauri::command]
 fn end_session(app: AppHandle, state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    eprintln!(
+        "[info] [command] end_session session_id={}",
+        session_id
+    );
     {
         let mut map = state.runtime.sessions.lock().map_err(|_| "sessions lock poisoned")?;
         map.remove(&session_id);

@@ -50,6 +50,34 @@ body,
   font-size: 13px;
 }
 
+.error-root {
+  overflow: auto;
+}
+
+.error-shell {
+  border: 1px solid #8f3b48;
+  border-radius: 16px;
+  background: rgba(52, 16, 22, 0.92);
+  padding: 16px;
+}
+
+.error-shell h1 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.error-stack {
+  margin: 12px 0 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(9, 19, 33, 0.9);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
 .workspace-shell {
   flex: 1;
   min-height: 0;
@@ -170,6 +198,75 @@ body,
   padding: 6px 10px;
   background: rgba(18, 34, 56, 0.9);
   font-size: 12px;
+}
+
+.diagnostics-shell {
+  border: 1px solid #294466;
+  border-radius: 14px;
+  background: rgba(8, 16, 28, 0.96);
+  overflow: hidden;
+}
+
+.diagnostics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #20395a;
+}
+
+.diagnostics-header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.diagnostics-log-list {
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diagnostics-log {
+  border: 1px solid #284766;
+  border-radius: 10px;
+  background: #102239;
+  padding: 10px;
+}
+
+.diagnostics-error {
+  border-color: #8f3b48;
+  background: rgba(52, 16, 22, 0.88);
+}
+
+.diagnostics-warn {
+  border-color: #7b6630;
+  background: rgba(58, 47, 14, 0.88);
+}
+
+.diagnostics-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+.diagnostics-message {
+  font-size: 13px;
+}
+
+.diagnostics-details {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
 }
 
 .layout {

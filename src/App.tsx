@@ -1,5 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { isTauriRuntime, onBackendEvent, tauriInvoke } from "./lib/tauri";
+import { DiagnosticsPanel } from "./components/system/DiagnosticsPanel";
+import { markRuntimeHealthy, runtimeLogger } from "./lib/runtimeDiagnostics";
 import { useAppStore } from "./state/store";
 import { CardLayout } from "./components/cards/CardLayout";
 import { Sidebar } from "./components/sidebar/Sidebar";
@@ -21,14 +23,23 @@ export default function App() {
   );
 
   useEffect(() => {
+    runtimeLogger.info("app", "App mounted");
+    markRuntimeHealthy();
     let dispose = () => {};
     void onBackendEvent((event) => {
+      runtimeLogger.debug("app", "Appending backend event into store", {
+        event_type: event.event_type,
+        session_id: event.session_id
+      });
       appendEvent(event);
     }).then((unlisten) => {
       dispose = unlisten;
     });
 
-    return () => dispose();
+    return () => {
+      runtimeLogger.info("app", "App unmounted");
+      dispose();
+    };
   }, [appendEvent]);
 
   useEffect(() => {
@@ -38,9 +49,13 @@ export default function App() {
 
     const hasActiveSession = projectSessions.some((session) => session.sessionId === activeSessionId);
     if (!hasActiveSession) {
+      runtimeLogger.info("app", "Project session set changed; selecting first session", {
+        projectId: activeProject.id,
+        sessionId: projectSessions[0].sessionId
+      });
       setActiveSession(projectSessions[0].sessionId);
     }
-  }, [activeSessionId, projectSessions, setActiveSession]);
+  }, [activeProject.id, activeSessionId, projectSessions, setActiveSession]);
 
   useEffect(() => {
     if (!activeSessionId || !isTauriRuntime()) {
@@ -49,10 +64,26 @@ export default function App() {
 
     void tauriInvoke("set_active_session", {
       sessionId: activeSessionId
-    }).catch(() => {
-      // Ignore sync failures in browser-only mode; state still updates locally.
-    });
+    })
+      .then(() => {
+        runtimeLogger.info("app", "Synced active session to Tauri backend", { activeSessionId });
+      })
+      .catch((error) => {
+        runtimeLogger.error("app", "Failed to sync active session to Tauri backend", {
+          activeSessionId,
+          error
+        });
+        // Ignore sync failures in browser-only mode; state still updates locally.
+      });
   }, [activeSessionId]);
+
+  useEffect(() => {
+    runtimeLogger.debug("app", "Active workspace context", {
+      projectId: activeProject.id,
+      layoutId: activeLayout.id,
+      activeSessionId
+    });
+  }, [activeLayout.id, activeProject.id, activeSessionId]);
 
   return (
     <main className="app-root">
@@ -82,6 +113,7 @@ export default function App() {
           />
         </section>
       </div>
+      <DiagnosticsPanel />
     </main>
   );
 }
