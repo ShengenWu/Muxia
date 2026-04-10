@@ -177,8 +177,18 @@ body,
   min-height: 0;
 }
 
+.layout-static {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: 48px;
+  gap: 12px;
+  align-content: start;
+}
+
 .grid-item {
   overflow: hidden;
+  min-width: 0;
+  min-height: 0;
 }
 
 .card-shell {
@@ -388,6 +398,16 @@ button:disabled {
 @media (max-width: 900px) {
   .workspace-shell {
     grid-template-columns: 1fr;
+  }
+
+  .layout-static {
+    grid-template-columns: 1fr;
+    grid-auto-rows: minmax(280px, auto);
+  }
+
+  .layout-static > .grid-item {
+    grid-column: auto !important;
+    grid-row: auto !important;
   }
 
   .topbar p {

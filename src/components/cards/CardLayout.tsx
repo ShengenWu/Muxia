@@ -1,11 +1,10 @@
-import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
+import type { CSSProperties } from "react";
+import type { Layout } from "react-grid-layout";
 import { AgentChatCard } from "./AgentChatCard";
 import { ChangeTrackingCard } from "./ChangeTrackingCard";
 import { DiffCard } from "./DiffCard";
 import { SessionGraphCard } from "./SessionGraphCard";
 import { TerminalCard } from "./TerminalCard";
-
-const ResponsiveGridLayout = WidthProvider(GridLayout);
 
 const storageKeyForScope = (storageScope: string) => `new-terminal-layout:${storageScope}`;
 
@@ -32,24 +31,27 @@ interface CardLayoutProps {
 }
 
 export function CardLayout({ storageScope, defaultLayout }: CardLayoutProps) {
+  const layout = loadLayout(storageScope, defaultLayout);
+  const layoutById = new Map(layout.map((item) => [item.i, item]));
+
   return (
-    <ResponsiveGridLayout
-      className="layout"
-      layout={loadLayout(storageScope, defaultLayout)}
-      cols={12}
-      rowHeight={48}
-      width={1180}
-      margin={[12, 12]}
-      draggableHandle=".card-header"
-      onLayoutChange={(layout: Layout[]) =>
-        localStorage.setItem(storageKeyForScope(storageScope), JSON.stringify(layout))
-      }
-    >
-      <div key="chat" className="grid-item"><AgentChatCard /></div>
-      <div key="graph" className="grid-item"><SessionGraphCard /></div>
-      <div key="change_tracking" className="grid-item"><ChangeTrackingCard /></div>
-      <div key="diff" className="grid-item"><DiffCard /></div>
-      <div key="terminal" className="grid-item"><TerminalCard /></div>
-    </ResponsiveGridLayout>
+    <section className="layout layout-static">
+      <div className="grid-item" style={toGridStyle(layoutById.get("chat"))}><AgentChatCard /></div>
+      <div className="grid-item" style={toGridStyle(layoutById.get("graph"))}><SessionGraphCard /></div>
+      <div className="grid-item" style={toGridStyle(layoutById.get("change_tracking"))}><ChangeTrackingCard /></div>
+      <div className="grid-item" style={toGridStyle(layoutById.get("diff"))}><DiffCard /></div>
+      <div className="grid-item" style={toGridStyle(layoutById.get("terminal"))}><TerminalCard /></div>
+    </section>
   );
 }
+
+const toGridStyle = (item?: Layout): CSSProperties => {
+  if (!item) {
+    return {};
+  }
+
+  return {
+    gridColumn: `${item.x + 1} / span ${item.w}`,
+    gridRow: `${item.y + 1} / span ${item.h}`
+  };
+};
