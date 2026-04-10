@@ -77,7 +77,7 @@
     - `npm run build`
     - `npm run tauri:dev`（若环境允许）
 
-- M5 白屏诊断与日志骨架 - `in_progress`
+- M5 白屏诊断与日志骨架 - `completed`
   - 范围：
     - 根级 `ErrorBoundary` 与全局错误捕获
     - 前端内存日志缓冲与可见诊断面板
@@ -86,6 +86,20 @@
   - 验收：
     - 桌面端若再发生运行时错误，窗口内可见错误摘要与最近日志
     - 前端启动、会话切换、Tauri 调用、后端事件、后端命令路径均有结构化日志
+    - `npm test`、`npm run build`、`npm run tauri:dev` 通过
+  - 最小验证：
+    - `npm test`
+    - `npm run build`
+    - `npm run tauri:dev`
+
+- M6 高级卡片安全恢复 - `completed`
+  - 范围：
+    - 恢复 `Diff` 的高级编辑器视图
+    - 恢复 `Terminal` 的 PTY 交互视图
+    - 通过懒加载、卡片级错误边界和 fallback 保持桌面端稳定
+  - 验收：
+    - `Diff` 与 `Terminal` 恢复高级能力
+    - 任一卡片异常只影响本卡片，窗口仍保留 Sidebar 与诊断面板
     - `npm test`、`npm run build`、`npm run tauri:dev` 通过
   - 最小验证：
     - `npm test`
@@ -106,7 +120,7 @@
 - 桌面烟测：`npm run tauri:dev`（若本机具备 Rust 工具链）
 
 ## Current Status
-- 当前里程碑：M5（进行中）
+- 当前里程碑：M6 已完成
 - 已完成：M1 事件契约迁移（前后端 `snake_case`），Store/后端已接受 `file_changed` 作为 diff 事实源
 - 本轮新增完成：
   - 左侧 Sidebar 骨架已落地，主界面改为 Sidebar + 工作区两栏
@@ -121,17 +135,21 @@
   - `file_changed -> change_tracking -> diff` 前端链路已闭合
   - 前端 active session 已同步到后端 `set_active_session`，降低 watcher 归因串线风险
   - watcher 仍以 `last_active_session` 做文件归因，快速切换会话时仍有时序风险
-  - 桌面端仍存在运行时白屏，当前缺乏窗口内可见的错误与日志通路
+  - 前端已具备窗口内诊断面板、根级错误边界与启动恢复保护
+  - `Diff` 与 `Terminal` 已恢复高级能力，并通过懒加载与卡片级 fallback 隔离风险
 - 已完成收口：
   - `npm test` 通过
   - `npm run build` 通过
   - `npm run tauri:dev` 已成功编译并启动 `target/debug/new-terminal`
   - reviewer 复核：无阻断级问题，保留一个低级时序风险
 - 正在做：
-  - 为桌面端增加工程级运行期诊断骨架，并以此继续定位白屏根因
+  - 等待用户确认恢复后的高级卡片在桌面窗口中的实际表现
 
 ## Next Step
-- 先完成 M5：让窗口内总能显示错误摘要和最近日志，再基于日志继续收敛白屏根因。
+- 若后续继续推进，优先补：
+  - `Terminal` 的真实历史回放而不只依赖运行中事件
+  - `Diff` 的语言识别与更稳健的 Monaco 错误埋点
+  - watcher 的 session 归因改造
 
 ## Blockers
 - 当前阻塞点：桌面端出现运行时白屏，用户无法直接从窗口内获取错误信息。
