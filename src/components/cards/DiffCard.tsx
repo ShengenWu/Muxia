@@ -1,4 +1,3 @@
-import Editor, { DiffEditor } from "@monaco-editor/react";
 import { useMemo } from "react";
 import { useAppStore } from "../../state/store";
 
@@ -32,26 +31,20 @@ export function DiffCard() {
         {current ? <span className="muted">{current.path}</span> : null}
       </header>
       {current ? (
-        <div className="diff-editor">
-          <DiffEditor
-            language="typescript"
-            original={current.before}
-            modified={current.after}
-            theme="vs-dark"
-            options={{
-              renderSideBySide: true,
-              minimap: { enabled: false },
-              readOnly: true
-            }}
-          />
+        <div className="diff-editor diff-fallback">
+          <section className="diff-pane">
+            <h3>Before</h3>
+            <pre>{current.before || "(empty)"}</pre>
+          </section>
+          <section className="diff-pane">
+            <h3>After</h3>
+            <pre>{current.after || "(empty)"}</pre>
+          </section>
         </div>
       ) : (
-        <Editor
-          language="markdown"
-          theme="vs-dark"
-          value="Select a file from Change Tracking or wait for a file_changed event..."
-          options={{ readOnly: true, minimap: { enabled: false } }}
-        />
+        <div className="diff-editor diff-empty">
+          <p className="empty">Select a file from Change Tracking or wait for a file_changed event...</p>
+        </div>
       )}
     </section>
   );
