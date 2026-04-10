@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import type { SessionRecord } from "../../types/events";
 import type { WorkspaceLayoutPreset, WorkspaceProject } from "../../state/workspace";
+import type { SessionRecord } from "../../types/events";
 
 interface SidebarProps {
   projects: WorkspaceProject[];
@@ -25,6 +25,7 @@ export function Sidebar({
   onLayoutChange,
   onSessionChange
 }: SidebarProps) {
+  const activeProject = projects.find((project) => project.id === activeProjectId) ?? projects[0];
   const projectSessions = useMemo(
     () =>
       Object.values(sessions)
@@ -33,38 +34,37 @@ export function Sidebar({
     [activeProjectId, sessions]
   );
 
-  return (
-    <aside className={collapsed ? "sidebar-shell collapsed" : "sidebar-shell"}>
-      {collapsed ? (
-        <>
-          <div className="sidebar-compact-block">
-            <span className="sidebar-compact-kicker">P</span>
+  if (collapsed) {
+    return (
+      <aside className="sidebar-shell collapsed">
+        <div className="sidebar-compact-block">
+          <span className="sidebar-compact-kicker">P</span>
+          <button className="sidebar-compact-item active" type="button" onClick={() => onProjectChange(activeProject.id)}>
+            {activeProject.name.slice(0, 1).toUpperCase()}
+          </button>
+        </div>
+        <div className="sidebar-compact-block">
+          <span className="sidebar-compact-kicker">S</span>
+          {projectSessions.slice(0, 4).map((session) => (
             <button
-              className="nav-subitem active sidebar-compact-item"
+              key={session.sessionId}
+              className={session.sessionId === activeSessionId ? "sidebar-compact-item active" : "sidebar-compact-item"}
               type="button"
-              onClick={() => onProjectChange(activeProjectId)}
+              onClick={() => onSessionChange(session.sessionId)}
+              title={`${session.agentType}:${session.sessionId.slice(0, 8)}`}
             >
-              {projects.find((project) => project.id === activeProjectId)?.name.slice(0, 1) ?? "P"}
+              {session.agentType.slice(0, 1).toUpperCase()}
             </button>
-          </div>
-          <div className="sidebar-compact-block">
-            <span className="sidebar-compact-kicker">S</span>
-            {projectSessions.slice(0, 4).map((session) => (
-              <button
-                key={session.sessionId}
-                className={session.sessionId === activeSessionId ? "nav-subitem active sidebar-compact-item" : "nav-subitem sidebar-compact-item"}
-                type="button"
-                onClick={() => onSessionChange(session.sessionId)}
-              >
-                {session.agentType.slice(0, 1).toUpperCase()}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
+          ))}
+        </div>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="sidebar-shell">
       <div className="sidebar-section">
-        <p className="sidebar-kicker">Project Tree</p>
+        <p className="sidebar-kicker">Projects</p>
         {projects.map((project) => (
           <div className="project-block" key={project.id}>
             <button
@@ -91,7 +91,7 @@ export function Sidebar({
         ))}
       </div>
       <div className="sidebar-section">
-        <p className="sidebar-kicker">Session List</p>
+        <p className="sidebar-kicker">Sessions</p>
         {projectSessions.length > 0 ? (
           <div className="session-nav-list">
             {projectSessions.map((session) => (
@@ -110,8 +110,6 @@ export function Sidebar({
           <p className="sidebar-note">No sessions for the active project yet. Start one from the chat card.</p>
         )}
       </div>
-        </>
-      )}
     </aside>
   );
 }
@@ -124,11 +122,7 @@ interface LayoutButtonProps {
 
 function LayoutButton({ layout, active, onClick }: LayoutButtonProps) {
   return (
-    <button
-      className={active ? "nav-subitem active" : "nav-subitem"}
-      type="button"
-      onClick={() => onClick(layout.id)}
-    >
+    <button className={active ? "nav-subitem active" : "nav-subitem"} type="button" onClick={() => onClick(layout.id)}>
       {layout.name}
     </button>
   );

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { isTauriRuntime, onBackendEvent, tauriInvoke } from "./lib/tauri";
-import { DiagnosticsPanel } from "./components/system/DiagnosticsPanel";
-import { markRuntimeHealthy, runtimeLogger } from "./lib/runtimeDiagnostics";
-import { useAppStore } from "./state/store";
 import { CardLayout } from "./components/cards/CardLayout";
 import { Sidebar } from "./components/sidebar/Sidebar";
+import { DiagnosticsPanel } from "./components/system/DiagnosticsPanel";
+import { runtimeLogger, markRuntimeHealthy } from "./lib/runtimeDiagnostics";
+import { isTauriRuntime, onBackendEvent, tauriInvoke } from "./lib/tauri";
+import { useAppStore } from "./state/store";
 import { useWorkspaceState } from "./state/workspace";
 
 export default function App() {
@@ -74,7 +74,6 @@ export default function App() {
           activeSessionId,
           error
         });
-        // Ignore sync failures in browser-only mode; state still updates locally.
       });
   }, [activeSessionId]);
 
@@ -106,15 +105,16 @@ export default function App() {
             <span className="traffic-light traffic-light-minimize" />
             <span className="traffic-light traffic-light-expand" />
           </div>
-          <button className="shell-icon-button" type="button" onClick={handleProjectCreate}>
+          <button className="shell-icon-button" type="button" onClick={handleProjectCreate} title="Add project">
             +
           </button>
           <button
             className="shell-icon-button shell-toggle-button"
             type="button"
             onClick={() => setSidebarCollapsed((current) => !current)}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {sidebarCollapsed ? "[>]" : "[|]"}
+            {sidebarCollapsed ? ">" : "<"}
           </button>
         </div>
         <div className="topbar-title">
@@ -122,10 +122,10 @@ export default function App() {
           <span>{activeLayout.name}</span>
         </div>
         <div className="topbar-group topbar-group-right">
-          <button className="shell-icon-button" type="button">
+          <button className="shell-icon-button" type="button" title="Notifications">
             !
           </button>
-          <button className="shell-icon-button" type="button" onClick={handleCardCreate}>
+          <button className="shell-icon-button" type="button" onClick={handleCardCreate} title="Add card">
             +
           </button>
         </div>
@@ -144,8 +144,9 @@ export default function App() {
         />
         <section className="workspace-main">
           <div className="workspace-status">
-            <span className="workspace-badge">{activeProject.name}</span>
-            <span className="workspace-badge">{activeLayout.name}</span>
+            <span className="workspace-badge">project:{activeProject.id}</span>
+            <span className="workspace-badge">layout:{activeLayout.id}</span>
+            <span className="workspace-badge">sessions:{projectSessions.length}</span>
           </div>
           <CardLayout
             storageScope={`${activeProject.id}:${activeLayout.id}`}
