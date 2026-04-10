@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::models::{EventEnvelope, EventType};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter};
 
 pub fn emit_event(app: &AppHandle, db: &Database, event: &EventEnvelope) {
     if let Err(err) = db.insert_event(event) {

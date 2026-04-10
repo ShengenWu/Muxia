@@ -5,7 +5,9 @@ import { useAppStore } from "../../state/store";
 export function DiffCard() {
   const sessionId = useAppStore((s) => s.activeSessionId);
   const diffs = useAppStore((s) => (sessionId ? s.diffs[sessionId] ?? [] : []));
-  const selectedDiffPath = useAppStore((s) => s.selectedDiffPath);
+  const selectedDiffPath = useAppStore((s) =>
+    sessionId ? s.selectedDiffPathBySession[sessionId] : undefined
+  );
 
   const current = useMemo(
     () => diffs.find((diff) => diff.path === selectedDiffPath) ?? diffs[0],

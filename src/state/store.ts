@@ -17,10 +17,10 @@ interface AppState {
   nodes: Record<string, ActionNode[]>;
   edges: Record<string, GraphEdge[]>;
   diffs: Record<string, DiffArtifact[]>;
-  selectedDiffPath?: string;
+  selectedDiffPathBySession: Record<string, string | undefined>;
   appendEvent: (event: EventEnvelope) => void;
   setActiveSession: (sessionId: string) => void;
-  selectDiffPath: (path?: string) => void;
+  selectDiffPath: (sessionId: string, path?: string) => void;
 }
 
 const mergeById = <T extends { id: string }>(current: T[], item: T): T[] => {
@@ -55,9 +55,15 @@ export const useAppStore = create<AppState>((set) => ({
   nodes: {},
   edges: {},
   diffs: {},
-  selectedDiffPath: undefined,
+  selectedDiffPathBySession: {},
   setActiveSession: (sessionId) => set({ activeSessionId: sessionId }),
-  selectDiffPath: (path) => set({ selectedDiffPath: path }),
+  selectDiffPath: (sessionId, path) =>
+    set((state) => ({
+      selectedDiffPathBySession: {
+        ...state.selectedDiffPathBySession,
+        [sessionId]: path
+      }
+    })),
   appendEvent: (event) =>
     set((state) => {
       const next = { ...state };
@@ -200,9 +206,13 @@ export const useAppStore = create<AppState>((set) => ({
           ...state.diffs,
           [sessionId]: updated
         };
-        if (!state.selectedDiffPath || state.activeSessionId === sessionId) {
-          next.selectedDiffPath = nextArtifact.path;
-        }
+        next.selectedDiffPathBySession = {
+          ...state.selectedDiffPathBySession,
+          [sessionId]:
+            state.selectedDiffPathBySession[sessionId] && state.activeSessionId !== sessionId
+              ? state.selectedDiffPathBySession[sessionId]
+              : nextArtifact.path
+        };
       }
 
       return next;

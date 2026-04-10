@@ -22,7 +22,7 @@ describe("store event reducer", () => {
       nodes: {},
       edges: {},
       diffs: {},
-      selectedDiffPath: undefined,
+      selectedDiffPathBySession: {},
       appendEvent: useAppStore.getState().appendEvent,
       setActiveSession: useAppStore.getState().setActiveSession,
       selectDiffPath: useAppStore.getState().selectDiffPath
@@ -90,6 +90,6 @@ describe("store event reducer", () => {
     expect(state.nodes.s1).toHaveLength(1);
     expect(state.edges.s1).toHaveLength(1);
     expect(state.diffs.s1).toHaveLength(1);
-    expect(state.selectedDiffPath).toBe("src/App.tsx");
+    expect(state.selectedDiffPathBySession.s1).toBe("src/App.tsx");
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { onBackendEvent } from "./lib/tauri";
+import { isTauriRuntime, onBackendEvent, tauriInvoke } from "./lib/tauri";
 import { useAppStore } from "./state/store";
 import { CardLayout } from "./components/cards/CardLayout";
 import { Sidebar } from "./components/sidebar/Sidebar";
@@ -41,6 +41,18 @@ export default function App() {
       setActiveSession(projectSessions[0].sessionId);
     }
   }, [activeSessionId, projectSessions, setActiveSession]);
+
+  useEffect(() => {
+    if (!activeSessionId || !isTauriRuntime()) {
+      return;
+    }
+
+    void tauriInvoke("set_active_session", {
+      sessionId: activeSessionId
+    }).catch(() => {
+      // Ignore sync failures in browser-only mode; state still updates locally.
+    });
+  }, [activeSessionId]);
 
   return (
     <main className="app-root">

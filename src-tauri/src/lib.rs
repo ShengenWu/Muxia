@@ -260,6 +260,23 @@ fn write_pty(state: State<'_, AppState>, session_id: String, data: String) -> Re
 }
 
 #[tauri::command]
+fn set_active_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    let map = state.runtime.sessions.lock().map_err(|_| "sessions lock poisoned")?;
+    if !map.contains_key(&session_id) {
+        return Err("session not found".to_string());
+    }
+    drop(map);
+
+    let mut active = state
+        .runtime
+        .last_active_session
+        .lock()
+        .map_err(|_| "active session lock poisoned".to_string())?;
+    *active = Some(session_id);
+    Ok(())
+}
+
+#[tauri::command]
 fn end_session(app: AppHandle, state: State<'_, AppState>, session_id: String) -> Result<(), String> {
     {
         let mut map = state.runtime.sessions.lock().map_err(|_| "sessions lock poisoned")?;
@@ -295,6 +312,7 @@ pub fn run() {
             create_session,
             send_user_message,
             write_pty,
+            set_active_session,
             end_session
         ])
         .run(tauri::generate_context!())

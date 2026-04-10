@@ -4,7 +4,9 @@ import { useAppStore } from "../../state/store";
 export function ChangeTrackingCard() {
   const sessionId = useAppStore((s) => s.activeSessionId);
   const diffs = useAppStore((s) => (sessionId ? s.diffs[sessionId] ?? [] : []));
-  const selectedDiffPath = useAppStore((s) => s.selectedDiffPath);
+  const selectedDiffPath = useAppStore((s) =>
+    sessionId ? s.selectedDiffPathBySession[sessionId] : undefined
+  );
   const selectDiffPath = useAppStore((s) => s.selectDiffPath);
 
   const orderedDiffs = useMemo(
@@ -36,7 +38,7 @@ export function ChangeTrackingCard() {
               key={diff.path}
               type="button"
               className={diff.path === selectedDiffPath ? "change-item active" : "change-item"}
-              onClick={() => selectDiffPath(diff.path)}
+              onClick={() => selectDiffPath(sessionId, diff.path)}
             >
               <span className="change-path">{diff.path}</span>
               <span className="change-meta">{diff.changeType} · {new Date(diff.ts).toLocaleTimeString()}</span>

@@ -58,7 +58,7 @@
     - `npm test`
     - `npm run build`
 
-- M4 收口验证与评审 - `in_progress`
+- M4 收口验证与评审 - `completed`
   - 范围：
     - 运行全量基线验证
     - 依据 `.agent/code_review.md` 做一次 reviewer 复核
@@ -86,7 +86,7 @@
 - 桌面烟测：`npm run tauri:dev`（若本机具备 Rust 工具链）
 
 ## Current Status
-- 当前里程碑：M4（进行中）
+- 当前里程碑：全部里程碑已完成（Tonight P0 closed）
 - 已完成：M1 事件契约迁移（前后端 `snake_case`），Store/后端已接受 `file_changed` 作为 diff 事实源
 - 本轮新增完成：
   - 左侧 Sidebar 骨架已落地，主界面改为 Sidebar + 工作区两栏
@@ -99,11 +99,18 @@
   - 前端已具备 Sidebar、双布局预设与作用域布局持久化
   - 会话事实仍按 `session_id` 存储，且布局切换不会覆盖 active session 事实
   - `file_changed -> change_tracking -> diff` 前端链路已闭合
-  - watcher 仍以 `last_active_session` 绑定文件事件，是当前最主要剩余风险
-- 正在做：运行收口验证、桌面烟测与 reviewer 复核，记录剩余风险和下一步
+  - 前端 active session 已同步到后端 `set_active_session`，降低 watcher 归因串线风险
+  - watcher 仍以 `last_active_session` 做文件归因，快速切换会话时仍有时序风险
+- 已完成收口：
+  - `npm test` 通过
+  - `npm run build` 通过
+  - `npm run tauri:dev` 已成功编译并启动 `target/debug/new-terminal`
+  - reviewer 复核：无阻断级问题，保留一个低级时序风险
 
 ## Next Step
-- 完成 M4：补 reviewer 结论、执行桌面烟测（若环境允许），回写 `.agent/code_review.md` 与最终风险。
+- 下一步候选：
+  - 将 watcher 的文件变更归因从全局 `last_active_session` 升级为更稳健的 session 绑定策略
+  - 为桌面端关键链路补自动化 smoke / integration tests
 
 ## Blockers
-- 暂无阻塞。
+- 无阻断；保留低级风险：快速切换 active session 与文件落盘同时发生时，`file_changed` 仍可能短暂归入旧 session。
