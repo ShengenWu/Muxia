@@ -23,6 +23,20 @@ export async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>
   }
 }
 
+export const emitFrontendLog = (channel: string, message: string, details?: unknown) => {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  void invoke("frontend_log", {
+    channel,
+    message,
+    details: details === undefined ? undefined : safeSerialize(details)
+  }).catch(() => {
+    // Ignore logging transport failures to avoid cascading render issues.
+  });
+};
+
 export async function onBackendEvent(
   handler: (event: EventEnvelope) => void
 ): Promise<() => void> {
@@ -45,3 +59,11 @@ export async function onBackendEvent(
     unlisten();
   };
 }
+
+const safeSerialize = (value: unknown): string => {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};

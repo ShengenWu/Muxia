@@ -43,6 +43,7 @@ export interface EventEnvelope<TPayload = unknown> {
 
 export interface SessionRecord {
   sessionId: string;
+  projectId: string;
   agentType: "claude" | "codex";
   cwd: string;
   startedAt: string;

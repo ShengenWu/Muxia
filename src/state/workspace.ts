@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Layout } from "react-grid-layout";
 import { runtimeLogger } from "../lib/runtimeDiagnostics";
+import { isPaneCardId, type PaneCardId } from "./layoutCards";
 
 export interface WorkspaceLayoutPreset {
   id: string;
   name: string;
-  defaultGrid: Layout[];
+  defaultCards: PaneCardId[];
 }
 
 export interface WorkspaceProject {
@@ -26,8 +27,22 @@ interface PersistedWorkspaceSnapshot {
   data: WorkspaceSnapshot;
 }
 
+interface LegacyWorkspaceLayoutPreset {
+  id: string;
+  name: string;
+  defaultGrid?: Layout[];
+  defaultCards?: string[];
+}
+
+interface LegacyWorkspaceProject {
+  id: string;
+  name: string;
+  rootPath?: string;
+  layouts?: LegacyWorkspaceLayoutPreset[];
+}
+
 const STORAGE_KEY = "new-terminal-workspace";
-const STORAGE_VERSION = 3;
+const STORAGE_VERSION = 4;
 
 const operationsLayout: Layout[] = [
   { i: "chat", x: 0, y: 0, w: 4, h: 7 },
@@ -38,54 +53,30 @@ const operationsLayout: Layout[] = [
 ];
 
 const reviewLayout: Layout[] = [
-  { i: "chat", x: 0, y: 0, w: 4, h: 6 },
-  { i: "change_tracking", x: 4, y: 0, w: 3, h: 6 },
-  { i: "diff", x: 7, y: 0, w: 5, h: 8 },
-  { i: "graph", x: 0, y: 6, w: 7, h: 7 },
-  { i: "terminal", x: 7, y: 8, w: 5, h: 5 }
+  { i: "diff", x: 0, y: 0, w: 7, h: 8 },
+  { i: "terminal", x: 7, y: 0, w: 5, h: 8 }
 ];
 
 export const DEFAULT_PROJECT_ID = "project_alpha";
+const DEFAULT_PROJECT_ROOT = "virtual://alpha-workbench";
 
-export const buildDefaultLayouts = (): WorkspaceLayoutPreset[] => [
-  { id: "layout_ops", name: "Ops Board", defaultGrid: operationsLayout },
-  { id: "layout_review", name: "Review Board", defaultGrid: reviewLayout }
+const createDefaultLayouts = (): WorkspaceLayoutPreset[] => [
+  { id: "layout_ops", name: "Ops Board", defaultCards: ["chat"] },
+  { id: "layout_review", name: "Review Board", defaultCards: deriveCardsFromLegacyGrid(reviewLayout) }
 ];
-
-const createProjectNameFromPath = (rootPath: string): string => {
-  const trimmed = rootPath.replace(/[\\/]+$/, "");
-  const segments = trimmed.split(/[\\/]/).filter(Boolean);
-  return segments[segments.length - 1] || "Imported Project";
-};
-
-export const createProjectIdFromPath = (rootPath: string): string => {
-  const normalized = rootPath.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  return `project_${normalized || "imported"}`;
-};
-
-export const createWorkspaceProjectFromPath = (rootPath: string): WorkspaceProject => ({
-  id: createProjectIdFromPath(rootPath),
-  name: createProjectNameFromPath(rootPath),
-  rootPath,
-  layouts: buildDefaultLayouts()
-});
 
 const defaultWorkspace = (): WorkspaceSnapshot => ({
   projects: [
     {
       id: DEFAULT_PROJECT_ID,
       name: "Alpha Workbench",
-      rootPath: "/alpha-workbench",
-      layouts: buildDefaultLayouts()
+      rootPath: DEFAULT_PROJECT_ROOT,
+      layouts: createDefaultLayouts()
     }
   ],
   activeProjectId: DEFAULT_PROJECT_ID,
   activeLayoutId: "layout_ops"
 });
-
-const isLayoutArray = (value: unknown): value is Layout[] => {
-  return Array.isArray(value) && value.every(isValidLayoutItem);
-};
 
 const isValidLayoutItem = (value: unknown): value is Layout => {
   if (!value || typeof value !== "object") {
@@ -108,20 +99,105 @@ const isValidLayoutItem = (value: unknown): value is Layout => {
   );
 };
 
-const normalizeWorkspace = (snapshot: WorkspaceSnapshot): WorkspaceSnapshot | null => {
+const normalizeRootPath = (rootPath: string): string => {
+  return rootPath.replace(/\\/g, "/").replace(/\/+$/, "");
+};
+
+const projectNameFromPath = (rootPath: string): string => {
+  const normalized = normalizeRootPath(rootPath);
+  const segments = normalized.split("/");
+  return segments[segments.length - 1] || "Imported Project";
+};
+
+const projectIdFromPath = (rootPath: string): string => {
+  const normalized = normalizeRootPath(rootPath);
+  const slug = normalized
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(-48);
+  return `project_${slug || "imported"}`;
+};
+
+export const createProjectIdFromPath = (rootPath: string): string => {
+  return projectIdFromPath(rootPath);
+};
+
+const deriveCardsFromLegacyGrid = (items: Layout[]): PaneCardId[] => {
+  return items
+    .slice()
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x))
+    .map((item) => item.i)
+    .filter(isPaneCardId);
+};
+
+const normalizeCardList = (cards: unknown, legacyGrid?: Layout[]): PaneCardId[] => {
+  if (Array.isArray(cards)) {
+    const normalizedCards = cards.filter((card): card is PaneCardId => typeof card === "string" && isPaneCardId(card));
+    if (normalizedCards.length > 0) {
+      return normalizedCards;
+    }
+  }
+
+  if (Array.isArray(legacyGrid) && legacyGrid.every(isValidLayoutItem)) {
+    const gridCards = deriveCardsFromLegacyGrid(legacyGrid);
+    if (gridCards.length > 0) {
+      return gridCards;
+    }
+  }
+
+  return ["chat"];
+};
+
+export const createProjectFromPath = (rootPath: string): WorkspaceProject => {
+  const normalizedRootPath = normalizeRootPath(rootPath);
+  return {
+    id: projectIdFromPath(normalizedRootPath),
+    name: projectNameFromPath(normalizedRootPath),
+    rootPath: normalizedRootPath,
+    layouts: createDefaultLayouts()
+  };
+};
+
+export const createWorkspaceProjectFromPath = (rootPath: string): WorkspaceProject => {
+  return createProjectFromPath(rootPath);
+};
+
+const normalizeWorkspace = (snapshot: WorkspaceSnapshot | { projects: LegacyWorkspaceProject[]; activeProjectId: string; activeLayoutId: string }): WorkspaceSnapshot | null => {
   if (!Array.isArray(snapshot.projects) || !snapshot.activeProjectId || !snapshot.activeLayoutId) {
     return null;
   }
 
   const normalizedProjects = snapshot.projects
-    .map((project) => ({
-      ...project,
-      rootPath: typeof project.rootPath === "string" ? project.rootPath : "",
-      layouts: Array.isArray(project.layouts)
-        ? project.layouts.filter((layout) => isLayoutArray(layout.defaultGrid))
-        : []
-    }))
-    .filter((project) => project.rootPath && project.layouts.length > 0);
+    .map((project) => {
+      const layouts = Array.isArray(project.layouts)
+        ? project.layouts
+            .map((layout) => ({
+              id: layout.id,
+              name: layout.name,
+              defaultCards: normalizeCardList(
+                "defaultCards" in layout ? layout.defaultCards : undefined,
+                "defaultGrid" in layout ? layout.defaultGrid : undefined
+              )
+            }))
+            .filter((layout) => layout.defaultCards.length > 0)
+        : [];
+
+      if (layouts.length === 0) {
+        return null;
+      }
+
+      return {
+        id: project.id,
+        name: project.name,
+        rootPath:
+          typeof project.rootPath === "string" && project.rootPath.length > 0
+            ? normalizeRootPath(project.rootPath)
+            : `virtual://${project.id}`,
+        layouts
+      };
+    })
+    .filter((project): project is WorkspaceProject => project !== null);
 
   if (normalizedProjects.length === 0) {
     return null;
@@ -162,7 +238,7 @@ const loadWorkspace = (): WorkspaceSnapshot => {
       return defaultWorkspace();
     }
 
-    const normalized = normalizeWorkspace(snapshot);
+    const normalized = normalizeWorkspace(snapshot as WorkspaceSnapshot);
     if (!normalized) {
       runtimeLogger.warn("workspace", "Stored workspace snapshot invalid; using defaults", snapshot);
       window.localStorage.removeItem(STORAGE_KEY);
@@ -183,7 +259,8 @@ const loadWorkspace = (): WorkspaceSnapshot => {
 };
 
 export const upsertProjectFromPath = (current: WorkspaceSnapshot, rootPath: string): WorkspaceSnapshot => {
-  const existingProject = current.projects.find((project) => project.rootPath === rootPath);
+  const normalizedRootPath = normalizeRootPath(rootPath);
+  const existingProject = current.projects.find((project) => project.rootPath === normalizedRootPath);
   if (existingProject) {
     return {
       ...current,
@@ -192,11 +269,11 @@ export const upsertProjectFromPath = (current: WorkspaceSnapshot, rootPath: stri
     };
   }
 
-  const nextProject = createWorkspaceProjectFromPath(rootPath);
+  const nextProject = createProjectFromPath(normalizedRootPath);
   return {
     projects: [...current.projects, nextProject],
     activeProjectId: nextProject.id,
-    activeLayoutId: nextProject.layouts[0].id
+    activeLayoutId: nextProject.layouts[0]?.id ?? current.activeLayoutId
   };
 };
 
@@ -254,14 +331,8 @@ export function useWorkspaceState() {
   };
 
   const createOrActivateProjectFromPath = (rootPath: string) => {
-    const normalizedPath = rootPath.trim();
-    if (!normalizedPath) {
-      runtimeLogger.warn("workspace", "Ignoring empty project import path");
-      return;
-    }
-
-    runtimeLogger.info("workspace", "Importing project from path", { rootPath: normalizedPath });
-    setWorkspace((current) => upsertProjectFromPath(current, normalizedPath));
+    runtimeLogger.info("workspace", "Importing project from path", { rootPath: normalizeRootPath(rootPath) });
+    setWorkspace((current) => upsertProjectFromPath(current, rootPath));
   };
 
   return {

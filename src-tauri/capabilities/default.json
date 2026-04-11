@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for new-terminal desktop app",
+  "remote": {
+    "urls": [
+      "http://localhost:1420",
+      "http://127.0.0.1:1420"
+    ]
+  },
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}

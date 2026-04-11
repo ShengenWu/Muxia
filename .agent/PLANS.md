@@ -90,15 +90,20 @@
   - 全局 shell / card 已切换到黑白暗橙主题，并移除圆角
   - Tauri 已新增 `pick_project_directory` 命令，macOS 下通过原生 Finder 文件夹选择框返回路径
   - `workspace.ts` 已支持按 `rootPath` 创建/复用项目，并为新项目自动生成默认 layouts
-  - `CardLayout` 仍是静态 CSS grid，不支持 pane split 或卡片动态增删
+  - `CardLayout` 已切到 pane split 模型与卡片增删持久化，但桌面端存在 Tauri 专属黑屏阻塞
   - 运行期诊断与启动恢复保护已经可用，必须在 redesign 中保留
 - 当前执行策略：
   - M1 已完成并通过 `npm run build`
   - M2 已完成，`npm test -- src/state/__tests__/store.test.ts`、`npm run build`、`npm run tauri:dev` 已通过
-  - 最后替换 pane engine 与布局持久化
+  - 当前先定位并修复 `npm run tauri:dev` 下的黑屏根因，再收口 M3
 
 ## Next Step
-- 用 pane split 模型替换静态 `CardLayout`，并接入右上 `+` 的动态卡片新增与尺寸持久化
+- 在 Tauri 侧记录主窗口/webview 的实际 bounds 并强制 `auto_resize`
+- 在前端记录可见性、computed style、`elementFromPoint` 与 `monaco/xterm/canvas` 覆盖层信息
+- 基于诊断结果修复桌面端黑屏，再继续收口 pane workspace
 
 ## Blockers
-- 暂无
+- `npm run dev` 浏览器可见 UI，但 `npm run tauri:dev` 桌面窗口黑屏
+  - 已尝试：清理 `vite/cargo/new-terminal` 相关进程并重启；补前端 bootstrap / mount 日志；确认页面已加载
+  - 失败证据：Tauri 终端日志显示 `main.tsx loaded`、`App mounted` 与 DOM probe，但窗口仍纯黑
+  - 最小解阻步骤：定位是 `webview` 尺寸链路还是 `Monaco/xterm` 覆盖层导致的可视区域问题，并在当前技术栈内修复

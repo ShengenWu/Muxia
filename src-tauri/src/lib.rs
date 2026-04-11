@@ -109,6 +109,14 @@ struct PickProjectDirectoryResponse {
 }
 
 #[tauri::command]
+fn frontend_log(channel: String, message: String, details: Option<String>) {
+    match details {
+        Some(details) => eprintln!("[frontend:{}] {} | {}", channel, message, details),
+        None => eprintln!("[frontend:{}] {}", channel, message),
+    }
+}
+
+#[tauri::command]
 fn create_session(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -368,7 +376,45 @@ fn pick_project_directory() -> Result<PickProjectDirectoryResponse, String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .on_page_load(|window, payload| {
+            eprintln!(
+                "[info] [webview] page load event window={} url={}",
+                window.label(),
+                payload.url()
+            );
+        })
         .setup(|app| {
+            if let Some(main_window) = app.get_webview_window("main") {
+                match main_window.inner_size() {
+                    Ok(size) => {
+                        eprintln!(
+                            "[info] [window] main inner_size width={} height={}",
+                            size.width, size.height
+                        );
+                    }
+                    Err(error) => {
+                        eprintln!("[error] [window] failed to read main inner_size: {error}");
+                    }
+                }
+
+                match main_window.as_ref().bounds() {
+                    Ok(bounds) => {
+                        eprintln!("[info] [webview] main bounds {:?}", bounds);
+                    }
+                    Err(error) => {
+                        eprintln!("[error] [webview] failed to read main bounds: {error}");
+                    }
+                }
+
+                if let Err(error) = main_window.as_ref().set_auto_resize(true) {
+                    eprintln!("[error] [webview] failed to enable auto_resize: {error}");
+                } else {
+                    eprintln!("[info] [webview] enabled auto_resize for main webview");
+                }
+            } else {
+                eprintln!("[error] [window] failed to resolve main webview window during setup");
+            }
+
             let data_dir = app
                 .path()
                 .app_data_dir()
@@ -386,7 +432,8 @@ pub fn run() {
             write_pty,
             set_active_session,
             end_session,
-            pick_project_directory
+            pick_project_directory,
+            frontend_log
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
