@@ -1,14 +1,14 @@
 :root {
   color-scheme: dark;
-  --shell-bg: #000000;
+  --shell-bg: #0a0a0a;
   --shell-panel: #111111;
-  --shell-panel-2: #1a1a1a;
-  --shell-card: #080808;
-  --shell-divider: #8a4b17;
-  --shell-divider-muted: #3f2613;
-  --text: #f5f5f5;
-  --muted: #8f8f8f;
-  --accent: #b86420;
+  --shell-panel-2: #181818;
+  --shell-card: #0d0d0d;
+  --shell-divider: #c4673a;
+  --shell-divider-muted: #2e1a10;
+  --text: #e8e8e8;
+  --muted: #666666;
+  --accent: #d97757;
 }
 
 * {
@@ -51,9 +51,9 @@ button:disabled {
 
 .topbar {
   min-height: 44px;
-  padding: 0 12px;
+  padding: 0 12px 0 80px;
   border-bottom: 1px solid var(--shell-divider);
-  background: #050505;
+  background: #060606;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
@@ -91,39 +91,14 @@ button:disabled {
   color: var(--muted);
 }
 
-.traffic-lights {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding-right: 4px;
-}
-
-.traffic-light {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  display: inline-block;
-}
-
-.traffic-light-close {
-  background: #ff5f57;
-}
-
-.traffic-light-minimize {
-  background: #febc2e;
-}
-
-.traffic-light-expand {
-  background: #28c840;
-}
-
 .shell-icon-button {
   min-width: 28px;
   height: 28px;
   border: 1px solid var(--shell-divider);
-  background: #080808;
+  background: #0d0d0d;
   color: var(--text);
   padding: 0 8px;
+  -webkit-app-region: no-drag;
 }
 
 .shell-toggle-button {
@@ -232,7 +207,7 @@ button:disabled {
 .nav-subitem.active,
 .sidebar-compact-item.active {
   border-color: var(--shell-divider);
-  background: #15100c;
+  background: #1a0f08;
 }
 
 .sidebar-compact-item {
@@ -279,89 +254,65 @@ button:disabled {
   background: var(--shell-bg);
 }
 
-.workspace-status {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.workspace-badge {
-  border: 1px solid var(--shell-divider-muted);
-  background: #0a0a0a;
-  padding: 6px 10px;
-  font-size: 12px;
-}
-
-.diagnostics-shell {
-  border-top: 1px solid var(--shell-divider);
-  background: #050505;
-  overflow: hidden;
-}
-
-.diagnostics-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--shell-divider-muted);
-}
-
-.diagnostics-header h2 {
-  margin: 0;
-  font-size: 14px;
-}
-
-.diagnostics-log-list {
-  max-height: 280px;
-  overflow: auto;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.diagnostics-log {
-  border: 1px solid var(--shell-divider-muted);
-  background: #0b0b0b;
-  padding: 10px;
-}
-
-.diagnostics-error {
-  border-color: #8f3b48;
-  background: rgba(52, 16, 22, 0.88);
-}
-
-.diagnostics-warn {
-  border-color: #7b6630;
-  background: rgba(58, 47, 14, 0.88);
-}
-
-.diagnostics-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 11px;
-  margin-bottom: 6px;
-}
-
-.diagnostics-message {
-  font-size: 13px;
-}
-
-.diagnostics-details {
-  margin: 8px 0 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  color: var(--text);
-}
-
 .layout {
   flex: 1;
   min-height: 0;
+}
+
+.layout-pane {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+}
+
+.pane-leaf,
+.pane-branch,
+.pane-branch-flex {
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-leaf {
+  display: flex;
+  flex: 1;
+}
+
+.pane-split {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pane-split-row {
+  flex-direction: row;
+}
+
+.pane-split-column {
+  flex-direction: column;
+}
+
+.pane-branch {
+  display: flex;
+}
+
+.pane-branch-flex {
+  flex: 1;
+}
+
+.pane-divider {
+  flex: 0 0 6px;
+  background: linear-gradient(180deg, transparent, var(--shell-divider), transparent);
+  position: relative;
+}
+
+.pane-divider-vertical {
+  cursor: col-resize;
+}
+
+.pane-divider-horizontal {
+  cursor: row-resize;
+  background: linear-gradient(90deg, transparent, var(--shell-divider), transparent);
 }
 
 .layout-static {
@@ -438,7 +389,7 @@ button:disabled {
 
 .session-pill.active {
   border-color: var(--shell-divider);
-  background: #15100c;
+  background: #1a0f08;
 }
 
 .chat-log,
@@ -469,7 +420,7 @@ button:disabled {
 }
 
 .bubble.agent {
-  background: #15100c;
+  background: #1a0f08;
 }
 
 .bubble-role {
@@ -514,7 +465,7 @@ button {
 
 .change-item.active {
   border-color: var(--shell-divider);
-  background: #15100c;
+  background: #1a0f08;
 }
 
 .change-path {
