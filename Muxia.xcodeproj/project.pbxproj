@@ -1,0 +1,260 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		F0A000000000000000000011 /* MuxiaHostApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0A000000000000000000021 /* MuxiaHostApp.swift */; };
+		F0A000000000000000000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F0A000000000000000000023 /* Assets.xcassets */; };
+		F0A000000000000000000013 /* MuxiaCore in Frameworks */ = {isa = PBXBuildFile; productRef = F0A000000000000000000051 /* MuxiaCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		F0A000000000000000000001 /* Muxia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Muxia.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0A000000000000000000021 /* MuxiaHostApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuxiaHostApp.swift; sourceTree = "<group>"; };
+		F0A000000000000000000022 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F0A000000000000000000023 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F0A000000000000000000031 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F0A000000000000000000013 /* MuxiaCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		F0A000000000000000000040 = {
+			isa = PBXGroup;
+			children = (
+				F0A000000000000000000041 /* MuxiaHostApp */,
+				F0A000000000000000000042 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F0A000000000000000000041 /* MuxiaHostApp */ = {
+			isa = PBXGroup;
+			children = (
+				F0A000000000000000000021 /* MuxiaHostApp.swift */,
+				F0A000000000000000000022 /* Info.plist */,
+				F0A000000000000000000023 /* Assets.xcassets */,
+			);
+			path = MuxiaHostApp;
+			sourceTree = "<group>";
+		};
+		F0A000000000000000000042 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F0A000000000000000000001 /* Muxia.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F0A000000000000000000050 /* Muxia */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F0A000000000000000000070 /* Build configuration list for PBXNativeTarget "Muxia" */;
+			buildPhases = (
+				F0A000000000000000000030 /* Sources */,
+				F0A000000000000000000031 /* Frameworks */,
+				F0A000000000000000000032 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Muxia;
+			packageProductDependencies = (
+				F0A000000000000000000051 /* MuxiaCore */,
+			);
+			productName = Muxia;
+			productReference = F0A000000000000000000001 /* Muxia.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F0A000000000000000000060 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					F0A000000000000000000050 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = F0A000000000000000000071 /* Build configuration list for PBXProject "Muxia" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = F0A000000000000000000040;
+			packageReferences = (
+				F0A000000000000000000052 /* XCLocalSwiftPackageReference "Muxia" */,
+			);
+			productRefGroup = F0A000000000000000000042 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F0A000000000000000000050 /* Muxia */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F0A000000000000000000032 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F0A000000000000000000012 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F0A000000000000000000030 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F0A000000000000000000011 /* MuxiaHostApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		F0A000000000000000000080 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		F0A000000000000000000081 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		F0A000000000000000000082 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MuxiaHostApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.muxia.host;
+				PRODUCT_NAME = Muxia;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		F0A000000000000000000083 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MuxiaHostApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.muxia.host;
+				PRODUCT_NAME = Muxia;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F0A000000000000000000070 /* Build configuration list for PBXNativeTarget "Muxia" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F0A000000000000000000082 /* Debug */,
+				F0A000000000000000000083 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F0A000000000000000000071 /* Build configuration list for PBXProject "Muxia" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F0A000000000000000000080 /* Debug */,
+				F0A000000000000000000081 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F0A000000000000000000052 /* XCLocalSwiftPackageReference "Muxia" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ".";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F0A000000000000000000051 /* MuxiaCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F0A000000000000000000052 /* XCLocalSwiftPackageReference "Muxia" */;
+			productName = MuxiaCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F0A000000000000000000060 /* Project object */;
+}
