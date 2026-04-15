@@ -14,10 +14,6 @@ This repository is for **Muxia**, a new macOS-native product under active develo
 
 Use `cmux-example/` as a source of implementation ideas, reusable low-level logic, and UI assets where the behavior is intentionally aligned. Do not treat it as the live app architecture. When code, assets, or interaction patterns are migrated closely from `cmux-example/`, explicitly note that the implementation is derived from `cmux`.
 
-## Build and Development
-
-Use **XcodeBuildMCP** for build workflows instead of ad hoc `xcodebuild` commands whenever possible. Before the first build in a session, inspect or set XcodeBuildMCP defaults, then use the simulator/build/test tools from that integration for compilation and verification.
-
 ## Coding and Change Rules
 
 Match surrounding style and keep edits narrow. Prefer Swift/macOS-native patterns for the product code at the repo root. If a change is behaviorally significant, update the relevant `.docs/` or `openspec/` artifact in the same line of work so implementation and planning stay aligned.
