@@ -184,6 +184,7 @@ private struct CodexCardView: View {
     @ObservedObject var store: WorkbenchStore
     let card: CardInstance
     @State private var isHistoryPresented = false
+    @State private var composerHeight: CGFloat = ComposerMetrics.minHeight
 
     var body: some View {
         let session = store.session(for: card.id)
@@ -292,9 +293,10 @@ private struct CodexCardView: View {
                         get: { store.chatState(for: card.id).draft },
                         set: { store.updateDraft($0, for: card.id) }
                     ),
+                    height: $composerHeight,
                     onSend: { store.sendDraftMessage(from: card.id) }
                 )
-                .frame(minHeight: 38, idealHeight: 38, maxHeight: 72)
+                .frame(height: composerHeight)
                 .padding(.horizontal, 2)
                 .background(Color.white.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -307,7 +309,7 @@ private struct CodexCardView: View {
                         Text("Message Codex")
                             .font(.body)
                             .foregroundStyle(.secondary)
-                            .padding(.leading, 14)
+                            .padding(.leading, 12)
                             .allowsHitTesting(false)
                     }
                 }
@@ -356,16 +358,20 @@ private struct CopyableErrorBanner: View {
 
 private struct ChatComposerTextView: NSViewRepresentable {
     @Binding var text: String
+    @Binding var height: CGFloat
     let onSend: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
+        Coordinator(text: $text, height: $height)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
         let textView = ComposerNSTextView()
         textView.delegate = context.coordinator
         textView.onSend = onSend
+        textView.onHeightChange = { newHeight in
+            context.coordinator.updateHeight(newHeight)
+        }
         textView.string = text
         textView.font = .systemFont(ofSize: NSFont.systemFontSize)
         textView.isRichText = false
@@ -378,21 +384,22 @@ private struct ChatComposerTextView: NSViewRepresentable {
         textView.backgroundColor = .clear
         textView.textColor = .white
         textView.insertionPointColor = .white
-        textView.textContainerInset = NSSize(width: 8, height: 8)
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.configureComposerMetrics()
 
         let scrollView = NSScrollView()
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.documentView = textView
 
-        textView.minSize = NSSize(width: 0, height: 38)
+        textView.minSize = NSSize(width: 0, height: ComposerMetrics.minHeight)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.scheduleHeightReport()
 
         return scrollView
     }
@@ -400,27 +407,76 @@ private struct ChatComposerTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? ComposerNSTextView else { return }
         textView.onSend = onSend
+        textView.onHeightChange = { newHeight in
+            context.coordinator.updateHeight(newHeight)
+        }
         if textView.string != text {
             textView.string = text
         }
+        textView.configureComposerMetrics()
+        textView.scheduleHeightReport()
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
+        @Binding var height: CGFloat
 
-        init(text: Binding<String>) {
+        init(text: Binding<String>, height: Binding<CGFloat>) {
             self._text = text
+            self._height = height
         }
 
         func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
+            guard let textView = notification.object as? ComposerNSTextView else { return }
             text = textView.string
+            textView.scheduleHeightReport()
+        }
+
+        func updateHeight(_ newHeight: CGFloat) {
+            guard abs(height - newHeight) > 0.5 else { return }
+            height = newHeight
         }
     }
 }
 
 private final class ComposerNSTextView: NSTextView {
     var onSend: (() -> Void)?
+    var onHeightChange: ((CGFloat) -> Void)?
+    private var pendingHeightReport = false
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        scheduleHeightReport()
+    }
+
+    func configureComposerMetrics() {
+        let lineHeight = layoutManager?.defaultLineHeight(for: font ?? .systemFont(ofSize: NSFont.systemFontSize)) ?? 17
+        let verticalInset = max(5, floor((ComposerMetrics.minHeight - lineHeight) / 2))
+        textContainerInset = NSSize(width: 6, height: verticalInset)
+    }
+
+    func reportHeightIfNeeded() {
+        guard let layoutManager, let textContainer else { return }
+
+        layoutManager.ensureLayout(for: textContainer)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let contentHeight = ceil(usedRect.height) + (textContainerInset.height * 2)
+        let clampedHeight = min(max(contentHeight, ComposerMetrics.minHeight), ComposerMetrics.maxHeight)
+        enclosingScrollView?.hasVerticalScroller = contentHeight > ComposerMetrics.maxHeight + 0.5
+        onHeightChange?(clampedHeight)
+    }
+
+    func scheduleHeightReport() {
+        guard !pendingHeightReport else { return }
+        pendingHeightReport = true
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.pendingHeightReport = false
+            self.reportHeightIfNeeded()
+        }
+    }
 
     override func keyDown(with event: NSEvent) {
         let keyCode = event.keyCode
@@ -434,6 +490,11 @@ private final class ComposerNSTextView: NSTextView {
 
         super.keyDown(with: event)
     }
+}
+
+private enum ComposerMetrics {
+    static let minHeight: CGFloat = 36
+    static let maxHeight: CGFloat = 72
 }
 
 private struct CodexMessageBubble: View {
