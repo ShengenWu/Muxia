@@ -3,82 +3,65 @@ import AppKit
 
 public struct WorkbenchRootView: View {
     @ObservedObject var store: WorkbenchStore
+    @State private var isSidebarExpanded = true
 
     public init(store: WorkbenchStore) {
         self.store = store
     }
 
     public var body: some View {
-        NavigationSplitView {
-            SidebarView(store: store)
-        } detail: {
-            if let workspace = store.selectedWorkspace {
-                WorkspaceCanvasView(store: store, workspace: workspace)
-                    .background(Color(red: 0.07, green: 0.08, blue: 0.09))
-            } else {
-                ContentUnavailableView("Open A Project", systemImage: "folder.badge.plus", description: Text("Muxia v0 starts from a Project and seeds a default Workspace shell."))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black)
+        ZStack(alignment: .topLeading) {
+            Group {
+                if let workspace = store.selectedWorkspace {
+                    WorkspaceCanvasView(
+                        store: store,
+                        workspace: workspace,
+                        leadingInset: isSidebarExpanded ? SidebarMetrics.expandedWidth + SidebarMetrics.canvasGap : SidebarMetrics.collapsedWidth + SidebarMetrics.canvasGap
+                    )
+                } else {
+                    ContentUnavailableView("Open A Project", systemImage: "folder.badge.plus", description: Text("Muxia v0 starts from a Project and seeds a default Workspace shell."))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.06, green: 0.07, blue: 0.08),
+                        Color(red: 0.03, green: 0.04, blue: 0.05)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+
+            SidebarView(store: store, isExpanded: $isSidebarExpanded)
+                .padding(.leading, 18)
+                .padding(.top, 12)
         }
-        .navigationSplitViewStyle(.balanced)
+        .background(WindowChromeConfigurator())
         .preferredColorScheme(.dark)
-    }
-}
+        .ignoresSafeArea()
+        .toolbar {
+            if isSidebarExpanded {
+                ToolbarItemGroup(placement: .navigation) {
+                    toolbarButton(systemImage: "folder.badge.plus", help: "Open Project", prominent: true) {
+                        openProjectPanel()
+                    }
 
-private struct SidebarView: View {
-    @ObservedObject var store: WorkbenchStore
+                    toolbarButton(systemImage: "plus", help: "New Workspace") {
+                        store.createWorkspace()
+                    }
+                    .disabled(store.selectedProject == nil)
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Muxia")
-                    .font(.system(size: 22, weight: .semibold, design: .rounded))
-                Spacer()
-                Button("Open") {
-                    openProjectPanel()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-            }
-            .padding(.horizontal)
-            .padding(.top)
-
-            List(selection: Binding(
-                get: { store.snapshot.selectedProjectID.map { "\($0.uuidString)" } },
-                set: { value in
-                    guard let value, let id = UUID(uuidString: value) else { return }
-                    store.selectProject(id)
-                }
-            )) {
-                ForEach(store.projects) { project in
-                    Section(project.project.name) {
-                        ForEach(project.workspaces) { workspace in
-                            Button {
-                                store.selectProject(project.project.id)
-                                store.selectWorkspace(workspace.id)
-                            } label: {
-                                HStack {
-                                    Image(systemName: workspace.id == store.snapshot.selectedWorkspaceID ? "square.fill" : "square.split.2x1")
-                                    Text(workspace.name)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.primary)
+                    toolbarButton(systemImage: "sidebar.left", help: "Collapse Sidebar") {
+                        withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+                            isSidebarExpanded = false
                         }
                     }
                 }
             }
-            .listStyle(.sidebar)
-
-            Button("New Workspace") {
-                store.createWorkspace()
-            }
-            .buttonStyle(.borderless)
-            .padding(.horizontal)
-            .padding(.bottom)
         }
-        .background(Color(red: 0.05, green: 0.06, blue: 0.07))
     }
 
     private func openProjectPanel() {
@@ -90,15 +73,193 @@ private struct SidebarView: View {
             store.openProject(at: url)
         }
     }
+
+    @ViewBuilder
+    private func toolbarButton(systemImage: String, help: String, prominent: Bool = false, action: @escaping () -> Void) -> some View {
+        if prominent {
+            Button(action: action) {
+                Image(systemName: systemImage)
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderedProminent)
+            .help(help)
+        } else {
+            Button(action: action) {
+                Image(systemName: systemImage)
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.bordered)
+            .help(help)
+        }
+    }
+}
+
+private struct SidebarView: View {
+    @ObservedObject var store: WorkbenchStore
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        Group {
+            if isExpanded {
+                expandedSidebar
+            } else {
+                collapsedSidebarButton
+            }
+        }
+        .animation(.spring(response: 0.24, dampingFraction: 0.88), value: isExpanded)
+    }
+
+    private var expandedSidebar: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Group {
+                if store.projects.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("No project loaded")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Open a local folder to create the first workspace.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 14) {
+                            ForEach(store.projects) { project in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Button {
+                                        store.selectProject(project.project.id)
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(project.project.name)
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(.primary)
+                                            Text(project.project.rootPath)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(10)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .fill(project.project.id == store.snapshot.selectedProjectID ? Color.white.opacity(0.12) : Color.white.opacity(0.05))
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        ForEach(project.workspaces) { workspace in
+                                            Button {
+                                                store.selectProject(project.project.id)
+                                                store.selectWorkspace(workspace.id)
+                                            } label: {
+                                                HStack(spacing: 8) {
+                                                    Image(systemName: workspace.id == store.snapshot.selectedWorkspaceID ? "circle.fill" : "circle")
+                                                        .font(.system(size: 8))
+                                                        .foregroundStyle(workspace.id == store.snapshot.selectedWorkspaceID ? .green : .secondary)
+                                                    Text(workspace.name)
+                                                        .lineLimit(1)
+                                                    Spacer(minLength: 0)
+                                                }
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 7)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                        .fill(workspace.id == store.snapshot.selectedWorkspaceID ? Color.white.opacity(0.09) : Color.clear)
+                                                )
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 14)
+        .frame(width: SidebarMetrics.expandedWidth, alignment: .topLeading)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.28), radius: 30, y: 18)
+    }
+
+    private var collapsedSidebarButton: some View {
+        Button {
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+                isExpanded = true
+            }
+        } label: {
+            Image(systemName: "sidebar.right")
+                .font(.system(size: 15, weight: .semibold))
+                .frame(width: SidebarMetrics.controlSize, height: SidebarMetrics.controlSize)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("Expand Sidebar")
+    }
 }
 
 private struct WorkspaceCanvasView: View {
     @ObservedObject var store: WorkbenchStore
     let workspace: WorkspaceRecord
+    let leadingInset: CGFloat
 
     var body: some View {
         RecursiveSplitView(store: store, workspace: workspace, node: workspace.layout)
-            .padding(12)
+            .padding(.top, 20)
+            .padding(.bottom, 20)
+            .padding(.trailing, 20)
+            .padding(.leading, leadingInset)
+            .overlay(alignment: .topTrailing) {
+                FloatingAddCardMenu(store: store, workspace: workspace)
+                    .padding(.top, 20)
+                    .padding(.trailing, 20)
+            }
+    }
+}
+
+private struct FloatingAddCardMenu: View {
+    @ObservedObject var store: WorkbenchStore
+    let workspace: WorkspaceRecord
+
+    var body: some View {
+        Menu {
+            let availableKinds = store.availableCardKinds(for: workspace)
+
+            if availableKinds.isEmpty {
+                Text("All cards already added")
+            } else {
+                ForEach(availableKinds, id: \.self) { kind in
+                    Button(kind.title) {
+                        store.addCard(kind: kind)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 38, height: 38)
+                .background(.ultraThinMaterial)
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.24), radius: 16, y: 10)
+        }
+        .menuStyle(.borderlessButton)
     }
 }
 
@@ -137,7 +298,7 @@ private struct CardSurfaceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(card.title)
+                Text(card.displayTitle)
                     .font(.headline)
                 Spacer()
                 if card.followsActiveThread {
@@ -145,6 +306,18 @@ private struct CardSurfaceView: View {
                         .font(.caption)
                         .foregroundStyle(.green)
                 }
+                Button {
+                    store.closeCard(card.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .background(Color.white.opacity(0.06))
+                .clipShape(Circle())
+                .disabled(!store.canCloseCard(card.id))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -172,8 +345,12 @@ private struct CardSurfaceView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .stroke(
+                    workspace.focusedCardID == card.id ? Color.green.opacity(0.45) : Color.white.opacity(0.08),
+                    lineWidth: workspace.focusedCardID == card.id ? 1.5 : 1
+                )
         )
+        .shadow(color: Color.black.opacity(0.22), radius: 18, y: 12)
         .onTapGesture {
             store.focusCard(card.id)
         }
@@ -495,6 +672,38 @@ private final class ComposerNSTextView: NSTextView {
 private enum ComposerMetrics {
     static let minHeight: CGFloat = 36
     static let maxHeight: CGFloat = 72
+}
+
+private enum SidebarMetrics {
+    static let expandedWidth: CGFloat = 320
+    static let collapsedWidth: CGFloat = 54
+    static let canvasGap: CGFloat = 16
+    static let controlSize: CGFloat = 34
+}
+
+private struct WindowChromeConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            configureWindow(for: view)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            configureWindow(for: nsView)
+        }
+    }
+
+    private func configureWindow(for view: NSView) {
+        guard let window = view.window else { return }
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.toolbar = nil
+        window.styleMask.insert(.fullSizeContentView)
+    }
 }
 
 private struct CodexMessageBubble: View {

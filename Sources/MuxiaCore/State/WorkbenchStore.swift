@@ -101,6 +101,51 @@ public final class WorkbenchStore: ObservableObject {
         save()
     }
 
+    public func canCloseCard(_ cardID: UUID) -> Bool {
+        guard let workspace = selectedWorkspace else { return false }
+        return workspace.cards.count > 1 && workspace.cards.contains(where: { $0.id == cardID })
+    }
+
+    public func availableCardKinds(for workspace: WorkspaceRecord? = nil) -> [CardKind] {
+        let workspace = workspace ?? selectedWorkspace
+        let existingKinds = Set(workspace?.cards.map(\.kind) ?? [])
+        return CardKind.allCases.filter { !existingKinds.contains($0) }
+    }
+
+    public func addCard(kind: CardKind) {
+        guard let cardID = ensureCard(kind: kind) else { return }
+        focusCard(cardID)
+    }
+
+    public func closeCard(_ cardID: UUID) {
+        guard canCloseCard(cardID) else { return }
+
+        let existingSession = session(for: cardID)
+        if let sessionID = existingSession?.id {
+            eventTasks[sessionID]?.cancel()
+            eventTasks[sessionID] = nil
+        }
+
+        mutateSelectedWorkspace { workspace in
+            workspace.cards.removeAll { $0.id == cardID }
+            workspace.layout = Self.removingCard(cardID, from: workspace.layout) ?? workspace.layout
+            if workspace.focusedCardID == cardID {
+                workspace.focusedCardID = Self.firstCardID(in: workspace.layout)
+            }
+            workspace.lastUpdated = .now
+        }
+
+        snapshot.runtimeSessions.removeAll { $0.cardID == cardID }
+        chatCardStates.removeValue(forKey: cardID)
+        save()
+
+        if let existingSession {
+            Task {
+                _ = await runtimeEnvironment.end(session: existingSession)
+            }
+        }
+    }
+
     public func setBinding(for cardID: UUID, binding: CardBinding) {
         mutateSelectedWorkspace { workspace in
             guard let index = workspace.cards.firstIndex(where: { $0.id == cardID }) else { return }
@@ -111,13 +156,13 @@ public final class WorkbenchStore: ObservableObject {
     }
 
     public func openDiff(fileChangeID: UUID, threadID: UUID?, artifactID: UUID) {
-        guard let cardID = selectedWorkspace?.cards.first(where: { $0.kind == .diff })?.id else { return }
+        guard let cardID = ensureCard(kind: .diff) else { return }
         setBinding(for: cardID, binding: CardBinding(threadID: threadID, fileChangeID: fileChangeID, artifactID: artifactID))
         focusCard(cardID)
     }
 
     public func openEditor(artifactID: UUID, threadID: UUID?) {
-        guard let cardID = selectedWorkspace?.cards.first(where: { $0.kind == .editor })?.id else { return }
+        guard let cardID = ensureCard(kind: .editor) else { return }
         setBinding(for: cardID, binding: CardBinding(threadID: threadID, artifactID: artifactID))
         focusCard(cardID)
     }
@@ -370,38 +415,39 @@ public final class WorkbenchStore: ObservableObject {
 
     public static func makeDefaultWorkspace(name: String) -> WorkspaceRecord {
         let codex = CardInstance(kind: .agentChat, followsActiveThread: false)
-        let graph = CardInstance(kind: .threadGraph, followsActiveThread: true)
-        let change = CardInstance(kind: .changeTracking, followsActiveThread: true)
-        let diff = CardInstance(kind: .diff, followsActiveThread: true)
-        let editor = CardInstance(kind: .editor, followsActiveThread: false)
-        let notes = CardInstance(kind: .notes, followsActiveThread: false)
-
-        let cards = [codex, graph, change, diff, editor, notes]
-        let leftColumn = WorkspaceLayoutNode.split(
-            axis: .vertical,
-            ratio: 0.58,
-            first: .leaf(codex.id),
-            second: .leaf(change.id)
-        )
-        let rightBottom = WorkspaceLayoutNode.split(
-            axis: .horizontal,
-            ratio: 0.5,
-            first: .leaf(diff.id),
-            second: .leaf(editor.id)
-        )
-        let rightColumn = WorkspaceLayoutNode.split(
-            axis: .vertical,
-            ratio: 0.42,
-            first: .leaf(graph.id),
-            second: WorkspaceLayoutNode.split(axis: .vertical, ratio: 0.66, first: rightBottom, second: .leaf(notes.id))
-        )
-        let root = WorkspaceLayoutNode.split(axis: .horizontal, ratio: 0.34, first: leftColumn, second: rightColumn)
         return WorkspaceRecord(
             name: name,
-            cards: cards,
-            layout: root,
+            cards: [codex],
+            layout: .leaf(codex.id),
             focusedCardID: codex.id
         )
+    }
+
+    private func ensureCard(kind: CardKind) -> UUID? {
+        var ensuredCardID: UUID?
+
+        mutateSelectedWorkspace { workspace in
+            if let existingCard = workspace.cards.first(where: { $0.kind == kind }) {
+                workspace.focusedCardID = existingCard.id
+                workspace.lastUpdated = .now
+                ensuredCardID = existingCard.id
+                return
+            }
+
+            let card = CardInstance(kind: kind, followsActiveThread: Self.defaultFollowsActiveThread(for: kind))
+            let anchorCardID = workspace.focusedCardID ?? workspace.cards.first?.id
+            workspace.cards.append(card)
+            workspace.layout = Self.insertingCard(card.id, into: workspace.layout, anchoredAt: anchorCardID)
+            workspace.focusedCardID = card.id
+            workspace.lastUpdated = .now
+            ensuredCardID = card.id
+        }
+
+        if ensuredCardID != nil {
+            save()
+        }
+
+        return ensuredCardID
     }
 
     private func listenForEvents(session: RuntimeSessionRecord) {
@@ -605,5 +651,76 @@ public final class WorkbenchStore: ObservableObject {
 
     private func save() {
         persistence.save(snapshot)
+    }
+
+    private static func defaultFollowsActiveThread(for kind: CardKind) -> Bool {
+        switch kind {
+        case .threadGraph, .changeTracking, .diff:
+            return true
+        case .agentChat, .editor, .notes:
+            return false
+        }
+    }
+
+    private static func firstCardID(in node: WorkspaceLayoutNode) -> UUID {
+        switch node {
+        case .leaf(let cardID):
+            return cardID
+        case .split(axis: _, ratio: _, first: let first, second: _):
+            return firstCardID(in: first)
+        }
+    }
+
+    private static func insertingCard(_ cardID: UUID, into node: WorkspaceLayoutNode, anchoredAt anchorCardID: UUID?) -> WorkspaceLayoutNode {
+        guard let anchorCardID else {
+            return .split(axis: .horizontal, ratio: 0.62, first: node, second: .leaf(cardID))
+        }
+
+        if let replacedNode = replacingLeaf(anchorCardID, in: node, transform: { existingLeaf in
+            .split(axis: .horizontal, ratio: 0.62, first: existingLeaf, second: .leaf(cardID))
+        }) {
+            return replacedNode
+        }
+
+        return .split(axis: .horizontal, ratio: 0.62, first: node, second: .leaf(cardID))
+    }
+
+    private static func replacingLeaf(
+        _ targetCardID: UUID,
+        in node: WorkspaceLayoutNode,
+        transform: (WorkspaceLayoutNode) -> WorkspaceLayoutNode
+    ) -> WorkspaceLayoutNode? {
+        switch node {
+        case .leaf(let cardID):
+            guard cardID == targetCardID else { return nil }
+            return transform(node)
+        case .split(axis: let axis, ratio: let ratio, first: let first, second: let second):
+            if let replacedFirst = replacingLeaf(targetCardID, in: first, transform: transform) {
+                return .split(axis: axis, ratio: ratio, first: replacedFirst, second: second)
+            }
+            if let replacedSecond = replacingLeaf(targetCardID, in: second, transform: transform) {
+                return .split(axis: axis, ratio: ratio, first: first, second: replacedSecond)
+            }
+            return nil
+        }
+    }
+
+    private static func removingCard(_ cardID: UUID, from node: WorkspaceLayoutNode) -> WorkspaceLayoutNode? {
+        switch node {
+        case .leaf(let leafCardID):
+            return leafCardID == cardID ? nil : node
+        case .split(axis: let axis, ratio: let ratio, first: let first, second: let second):
+            let updatedFirst = removingCard(cardID, from: first)
+            let updatedSecond = removingCard(cardID, from: second)
+
+            switch (updatedFirst, updatedSecond) {
+            case (nil, nil):
+                return nil
+            case (let remaining?, nil), (nil, let remaining?):
+                return remaining
+            case (let updatedFirst?, let updatedSecond?):
+                return .split(axis: axis, ratio: ratio, first: updatedFirst, second: updatedSecond)
+            }
+        }
     }
 }

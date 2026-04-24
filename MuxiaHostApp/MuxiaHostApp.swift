@@ -9,6 +9,7 @@ struct MuxiaHostApp: App {
         WindowGroup("Muxia") {
             HostWorkbenchRootView(store: store)
         }
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1440, height: 900)
         .windowResizability(.contentMinSize)
     }
@@ -19,7 +20,12 @@ private struct HostWorkbenchRootView: View {
     @State private var didAttemptRestoration = false
 
     var body: some View {
-        WorkbenchRootView(store: store)
+        configuredRoot
+    }
+
+    @ViewBuilder
+    private var configuredRoot: some View {
+        let root = WorkbenchRootView(store: store)
             .frame(minWidth: 1320, minHeight: 820)
             .task {
                 guard !didAttemptRestoration else { return }
@@ -29,5 +35,13 @@ private struct HostWorkbenchRootView: View {
                 await Task.yield()
                 store.attemptRuntimeRestoration()
             }
+
+        if #available(macOS 15.0, *) {
+            root
+                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+                .toolbar(removing: .title)
+        } else {
+            root
+        }
     }
 }

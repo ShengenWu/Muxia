@@ -77,6 +77,15 @@ public struct CardInstance: Identifiable, Codable, Hashable, Sendable {
     public var title: String
     public var followsActiveThread: Bool
     public var binding: CardBinding
+    
+    public var displayTitle: String {
+        switch kind {
+        case .agentChat:
+            return CardKind.agentChat.title
+        default:
+            return title.isEmpty ? kind.title : title
+        }
+    }
 
     public init(
         id: UUID = UUID(),

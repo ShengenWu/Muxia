@@ -72,25 +72,63 @@ struct WorkbenchStoreTests {
 
         let project = await MainActor.run { store.selectedProject }
         #expect(project?.workspaces.count == 1)
-        #expect(project?.workspaces.first?.cards.count == 6)
+        #expect(project?.workspaces.first?.cards.count == 1)
         let codexCard = project?.workspaces.first?.cards.first(where: { $0.kind == .agentChat })
-        #expect(codexCard?.title == "Codex")
+        #expect(codexCard?.displayTitle == "Codex")
     }
 
-    @Test func defaultWorkspaceUsesSplitPaneLayout() async throws {
+    @Test func defaultWorkspaceStartsWithSingleCodexCard() async throws {
         let workspace = await MainActor.run {
             WorkbenchStore.makeDefaultWorkspace(name: "Prototype")
         }
         switch workspace.layout {
-        case .split(axis: let axis, ratio: _, first: let first, second: _):
-            #expect(axis == .horizontal)
-            if case .split(axis: let childAxis, ratio: _, first: _, second: _) = first {
-                #expect(childAxis == .vertical)
-            } else {
-                Issue.record("Expected nested vertical split")
-            }
+        case .leaf(let cardID):
+            #expect(workspace.cards.count == 1)
+            #expect(workspace.cards.first?.id == cardID)
+            #expect(workspace.cards.first?.kind == .agentChat)
         default:
-            Issue.record("Expected root split layout")
+            Issue.record("Expected a single-card leaf layout")
+        }
+    }
+
+    @Test func addAndCloseCardsUpdatesWorkspaceLayout() async throws {
+        let persistence = PrototypePersistenceController(fileURL: temporaryFileURL())
+        let store = await MainActor.run {
+            WorkbenchStore(persistence: persistence)
+        }
+        let url = temporaryDirectory(named: "workspace-layout-project")
+
+        await MainActor.run {
+            store.openProject(at: url)
+            store.addCard(kind: .threadGraph)
+        }
+
+        let workspaceAfterAdd = await MainActor.run { store.selectedWorkspace }
+        #expect(workspaceAfterAdd?.cards.map(\.kind).contains(.threadGraph) == true)
+        switch workspaceAfterAdd?.layout {
+        case .split(axis: let axis, ratio: _, first: _, second: _):
+            #expect(axis == .horizontal)
+        default:
+            Issue.record("Expected split layout after adding a second card")
+        }
+
+        let graphCardID = await MainActor.run {
+            store.selectedWorkspace?.cards.first(where: { $0.kind == .threadGraph })?.id
+        }
+        await MainActor.run {
+            if let graphCardID {
+                store.closeCard(graphCardID)
+            }
+        }
+
+        let workspaceAfterClose = await MainActor.run { store.selectedWorkspace }
+        #expect(workspaceAfterClose?.cards.count == 1)
+        #expect(workspaceAfterClose?.cards.first?.kind == .agentChat)
+        switch workspaceAfterClose?.layout {
+        case .leaf(let cardID):
+            #expect(workspaceAfterClose?.cards.first?.id == cardID)
+        default:
+            Issue.record("Expected leaf layout after closing back to a single card")
         }
     }
 
@@ -155,6 +193,10 @@ struct WorkbenchStoreTests {
         await MainActor.run {
             store.openProject(at: url)
             store.updateWorkspaceNote("remember manual review")
+            store.addCard(kind: .threadGraph)
+            store.addCard(kind: .changeTracking)
+            store.addCard(kind: .diff)
+            store.addCard(kind: .editor)
             store.startSession(for: store.codexCard()!.id)
         }
         try await Task.sleep(nanoseconds: 200_000_000)
