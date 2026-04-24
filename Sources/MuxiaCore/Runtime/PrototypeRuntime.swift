@@ -2,9 +2,17 @@ import Foundation
 
 public enum CodexAppServerEvent: Sendable {
     case runtimeStatus(RuntimeStatus)
-    case threadActivated(CodexThreadRecord)
-    case turnCreated(CodexTurnRecord)
-    case itemCreated(CodexItemRecord)
+    case runtimeError(String)
+    case threadUpdated(CodexThreadRecord)
+    case turnUpdated(CodexTurnRecord)
+    case turnCompleted(UUID)
+    case itemUpdated(CodexItemRecord)
+    case assistantDelta(itemID: UUID, turnID: UUID, delta: String)
+    case toolProgress(ToolProgressRecord)
+    case shellOutput(ShellOutputRecord)
+    case approvalRequested(ApprovalRequestRecord)
+    case approvalResolved(requestID: String, decision: ApprovalDecision)
+    case fileChanged(DetectedFileChange)
 }
 
 public protocol CodexRuntimeClient: Sendable {
@@ -18,27 +26,41 @@ public protocol CodexAppServerClient: Sendable {
 }
 
 public protocol CodexRuntimeControlling: Sendable {
-    func newThread(for session: RuntimeSessionRecord) async
-    func resumePreviousThread(for session: RuntimeSessionRecord) async
-    func compactCurrentThread(for session: RuntimeSessionRecord) async
+    func sendUserMessage(_ text: String, for session: RuntimeSessionRecord) async throws
+    func interruptTurn(for session: RuntimeSessionRecord) async throws
+    func resumeThread(remoteID: String, for session: RuntimeSessionRecord) async throws
+    func forkThread(remoteID: String, for session: RuntimeSessionRecord) async throws
+    func rollbackThread(for session: RuntimeSessionRecord, droppingTurns turns: Int) async throws
+    func sendShellCommand(_ command: String, for session: RuntimeSessionRecord) async throws
+    func resolveApproval(requestID: String, decision: ApprovalDecision, for session: RuntimeSessionRecord) async throws
 }
 
 public typealias CodexRuntimeEnvironment = CodexRuntimeClient & CodexAppServerClient & CodexRuntimeControlling
 
+private struct MockSessionState: Sendable {
+    var projectID: UUID
+    var currentThread: CodexThreadRecord?
+    var currentTurn: CodexTurnRecord?
+    var threadHistory: [CodexThreadRecord] = []
+    var nextTurnIndex: Int = 1
+}
+
 public actor MockCodexRuntimeService: CodexRuntimeEnvironment {
     private var continuations: [UUID: AsyncStream<CodexAppServerEvent>.Continuation] = [:]
-    private var threadHistory: [UUID: [CodexThreadRecord]] = [:]
-    private var currentThread: [UUID: CodexThreadRecord] = [:]
+    private var sessions: [UUID: MockSessionState] = [:]
 
     public init() {}
 
     public func startSession(for project: ProjectRecord, cardID: UUID) async -> RuntimeSessionRecord {
-        RuntimeSessionRecord(cardID: cardID, projectID: project.id, status: .starting)
+        let session = RuntimeSessionRecord(cardID: cardID, projectID: project.id, status: .starting)
+        sessions[session.id] = MockSessionState(projectID: project.id)
+        return session
     }
 
     public func reconnect(session: RuntimeSessionRecord) async -> RuntimeSessionRecord? {
+        guard sessions[session.id] != nil else { return nil }
         var restored = session
-        restored.status = .running
+        restored.status = .starting
         restored.updatedAt = .now
         return restored
     }
@@ -57,111 +79,135 @@ public actor MockCodexRuntimeService: CodexRuntimeEnvironment {
         AsyncStream { continuation in
             continuations[session.id] = continuation
             continuation.yield(.runtimeStatus(.running))
-            Task { await self.seedInitialThread(for: session) }
         }
     }
 
-    public func newThread(for session: RuntimeSessionRecord) async {
-        await emitThreadLifecycle(
-            title: "New Thread \(threadHistory[session.id, default: []].count + 1)",
-            session: session,
-            makeBackgroundExisting: true,
-            itemTitle: "Started new thread",
-            itemDetail: "The runtime opened a fresh Codex thread in the same Agent Chat card."
-        )
-    }
+    public func sendUserMessage(_ text: String, for session: RuntimeSessionRecord) async throws {
+        guard var state = sessions[session.id] else { return }
 
-    public func resumePreviousThread(for session: RuntimeSessionRecord) async {
-        guard let history = threadHistory[session.id], history.count > 1 else { return }
-        let target = history[history.count - 2]
-        currentThread[session.id] = target
-        continuations[session.id]?.yield(.threadActivated(target))
-        let turn = CodexTurnRecord(threadID: target.id, index: 99)
-        continuations[session.id]?.yield(.turnCreated(turn))
-        continuations[session.id]?.yield(
-            .itemCreated(
-                CodexItemRecord(
-                    turnID: turn.id,
-                    kind: .summary,
-                    title: "Resumed thread",
-                    detail: "The runtime rebound the Agent Chat card to an earlier thread."
-                )
-            )
-        )
-    }
-
-    public func compactCurrentThread(for session: RuntimeSessionRecord) async {
-        guard var thread = currentThread[session.id] else { return }
-        thread.state = .compacted
-        thread.updatedAt = .now
-        currentThread[session.id] = thread
-        if var history = threadHistory[session.id], let index = history.firstIndex(where: { $0.id == thread.id }) {
-            history[index] = thread
-            threadHistory[session.id] = history
+        if state.currentThread == nil {
+            let thread = makeThread(projectID: state.projectID, title: "Primary Thread")
+            state.currentThread = thread
+            state.threadHistory.append(thread)
+            continuations[session.id]?.yield(.threadUpdated(thread))
         }
-        continuations[session.id]?.yield(.threadActivated(thread))
-        let turn = CodexTurnRecord(threadID: thread.id, index: 100)
-        continuations[session.id]?.yield(.turnCreated(turn))
-        continuations[session.id]?.yield(
-            .itemCreated(
-                CodexItemRecord(
-                    turnID: turn.id,
-                    kind: .summary,
-                    title: "Compacted context",
-                    detail: "The current thread kept its identity and refreshed its summary state."
-                )
-            )
+
+        guard let thread = state.currentThread else { return }
+
+        let turn = CodexTurnRecord(
+            remoteID: "mock-turn-\(session.id.uuidString)-\(state.nextTurnIndex)",
+            threadID: thread.id,
+            index: state.nextTurnIndex
         )
-    }
+        state.nextTurnIndex += 1
+        state.currentTurn = turn
+        continuations[session.id]?.yield(.turnUpdated(turn))
 
-    private func seedInitialThread(for session: RuntimeSessionRecord) async {
-        if currentThread[session.id] == nil {
-            await emitThreadLifecycle(
-                title: "Primary Thread",
-                session: session,
-                makeBackgroundExisting: false,
-                itemTitle: "Runtime attached",
-                itemDetail: "Codex runtime attached and started sending structured events."
+        let prompt = CodexItemRecord(
+            remoteID: "mock-item-prompt-\(turn.index)",
+            turnID: turn.id,
+            kind: .prompt,
+            title: "User Prompt",
+            detail: text
+        )
+        continuations[session.id]?.yield(.itemUpdated(prompt))
+
+        if text.localizedCaseInsensitiveContains("approval") {
+            let approval = ApprovalRequestRecord(
+                requestID: "mock-approval-\(turn.index)",
+                itemID: prompt.id,
+                kind: .command,
+                title: "Mock command approval",
+                message: "Approve mock command execution triggered by: \(text)"
             )
+            continuations[session.id]?.yield(.approvalRequested(approval))
+        } else if text.localizedCaseInsensitiveContains("hold") {
+            let item = CodexItemRecord(
+                remoteID: "mock-item-response-\(turn.index)",
+                turnID: turn.id,
+                kind: .response,
+                title: "Assistant",
+                detail: "Working..."
+            )
+            continuations[session.id]?.yield(.itemUpdated(item))
+            continuations[session.id]?.yield(.assistantDelta(itemID: item.id, turnID: turn.id, delta: "Working..."))
+        } else {
+            try await emitMockAssistantResponse(text: text, turn: turn, sessionID: session.id)
         }
+
+        sessions[session.id] = state
     }
 
-    private func emitThreadLifecycle(
-        title: String,
-        session: RuntimeSessionRecord,
-        makeBackgroundExisting: Bool,
-        itemTitle: String,
-        itemDetail: String
-    ) async {
-        if makeBackgroundExisting, var history = threadHistory[session.id] {
-            history = history.map {
-                var thread = $0
-                if thread.state == .active {
-                    thread.state = .background
-                    thread.updatedAt = .now
-                }
-                return thread
+    public func interruptTurn(for session: RuntimeSessionRecord) async throws {
+        guard let turn = sessions[session.id]?.currentTurn else { return }
+        continuations[session.id]?.yield(.turnCompleted(turn.id))
+        sessions[session.id]?.currentTurn = nil
+    }
+
+    public func resumeThread(remoteID: String, for session: RuntimeSessionRecord) async throws {
+        guard let thread = sessions[session.id]?.threadHistory.first(where: { $0.remoteID == remoteID }) else { return }
+        sessions[session.id]?.currentThread = thread
+        sessions[session.id]?.currentTurn = nil
+        continuations[session.id]?.yield(.threadUpdated(thread))
+    }
+
+    public func forkThread(remoteID: String, for session: RuntimeSessionRecord) async throws {
+        guard let current = sessions[session.id]?.threadHistory.first(where: { $0.remoteID == remoteID }) else { return }
+        guard var state = sessions[session.id] else { return }
+        let fork = makeThread(projectID: current.projectID, title: "\(current.title) Fork")
+        state.currentThread = fork
+        state.currentTurn = nil
+        state.threadHistory = state.threadHistory.map { thread in
+            var thread = thread
+            if thread.id == current.id {
+                thread.state = .background
             }
-            threadHistory[session.id] = history
+            return thread
         }
+        state.threadHistory.append(fork)
+        sessions[session.id] = state
+        continuations[session.id]?.yield(.threadUpdated(fork))
+    }
 
-        let thread = CodexThreadRecord(projectID: session.projectID, title: title)
-        threadHistory[session.id, default: []].append(thread)
-        currentThread[session.id] = thread
+    public func rollbackThread(for session: RuntimeSessionRecord, droppingTurns turns: Int) async throws {
+        guard var state = sessions[session.id], var thread = state.currentThread else { return }
+        thread.state = .compacted
+        thread.summary = "Rolled back \(turns) turn(s) in mock runtime."
+        state.currentThread = thread
+        sessions[session.id] = state
+        continuations[session.id]?.yield(.threadUpdated(thread))
+    }
 
-        continuations[session.id]?.yield(.threadActivated(thread))
-        let turn = CodexTurnRecord(threadID: thread.id, index: 1)
-        continuations[session.id]?.yield(.turnCreated(turn))
-        continuations[session.id]?.yield(
-            .itemCreated(
-                CodexItemRecord(
-                    turnID: turn.id,
-                    kind: .summary,
-                    title: itemTitle,
-                    detail: itemDetail
-                )
-            )
+    public func sendShellCommand(_ command: String, for session: RuntimeSessionRecord) async throws {
+        let output = ShellOutputRecord(stream: "stdout", text: "$ \(command)\nmock shell output")
+        continuations[session.id]?.yield(.shellOutput(output))
+        continuations[session.id]?.yield(.toolProgress(ToolProgressRecord(label: command, status: "completed")))
+    }
+
+    public func resolveApproval(requestID: String, decision: ApprovalDecision, for session: RuntimeSessionRecord) async throws {
+        continuations[session.id]?.yield(.approvalResolved(requestID: requestID, decision: decision))
+        guard decision == .approve, let currentTurn = sessions[session.id]?.currentTurn else { return }
+        try await emitMockAssistantResponse(text: "approval granted", turn: currentTurn, sessionID: session.id)
+    }
+
+    private func emitMockAssistantResponse(text: String, turn: CodexTurnRecord, sessionID: UUID) async throws {
+        let response = "Mock response to: \(text)"
+        let item = CodexItemRecord(
+            remoteID: "mock-item-response-\(turn.index)",
+            turnID: turn.id,
+            kind: .response,
+            title: "Assistant",
+            detail: response
         )
+        continuations[sessionID]?.yield(.itemUpdated(item))
+        continuations[sessionID]?.yield(.assistantDelta(itemID: item.id, turnID: turn.id, delta: response))
+        continuations[sessionID]?.yield(.turnCompleted(turn.id))
+        sessions[sessionID]?.currentTurn = nil
+    }
+
+    private func makeThread(projectID: UUID, title: String) -> CodexThreadRecord {
+        let remoteID = "mock-thread-\(UUID().uuidString)"
+        return CodexThreadRecord(id: UUID(), remoteID: remoteID, projectID: projectID, title: title)
     }
 }
 
@@ -188,7 +234,11 @@ public actor FailingReconnectRuntimeService: CodexRuntimeEnvironment {
         }
     }
 
-    public func newThread(for session: RuntimeSessionRecord) async {}
-    public func resumePreviousThread(for session: RuntimeSessionRecord) async {}
-    public func compactCurrentThread(for session: RuntimeSessionRecord) async {}
+    public func sendUserMessage(_ text: String, for session: RuntimeSessionRecord) async throws {}
+    public func interruptTurn(for session: RuntimeSessionRecord) async throws {}
+    public func resumeThread(remoteID: String, for session: RuntimeSessionRecord) async throws {}
+    public func forkThread(remoteID: String, for session: RuntimeSessionRecord) async throws {}
+    public func rollbackThread(for session: RuntimeSessionRecord, droppingTurns turns: Int) async throws {}
+    public func sendShellCommand(_ command: String, for session: RuntimeSessionRecord) async throws {}
+    public func resolveApproval(requestID: String, decision: ApprovalDecision, for session: RuntimeSessionRecord) async throws {}
 }

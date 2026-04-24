@@ -4,6 +4,7 @@ import Combine
 @MainActor
 public final class WorkbenchStore: ObservableObject {
     @Published public private(set) var snapshot: AppSnapshot
+    @Published public private(set) var chatCardStates: [UUID: ChatCardRuntimeState] = [:]
 
     private let persistence: PrototypePersistenceController
     private let runtimeEnvironment: any CodexRuntimeEnvironment
@@ -13,7 +14,7 @@ public final class WorkbenchStore: ObservableObject {
 
     public init(
         persistence: PrototypePersistenceController = PrototypePersistenceController(),
-        runtimeEnvironment: any CodexRuntimeEnvironment = MockCodexRuntimeService(),
+        runtimeEnvironment: any CodexRuntimeEnvironment = AppServerRuntimeService(),
         fileWatcher: ProjectFileWatcher = ProjectFileWatcher(),
         snapshotTracker: ProjectSnapshotTracker = ProjectSnapshotTracker()
     ) {
@@ -123,9 +124,15 @@ public final class WorkbenchStore: ObservableObject {
 
     public func startSession(for cardID: UUID) {
         guard let project = selectedProject?.project else { return }
+        chatCardStates[cardID, default: ChatCardRuntimeState()].lastError = nil
         Task {
             let session = await runtimeEnvironment.startSession(for: project, cardID: cardID)
             await MainActor.run {
+                if let previous = self.session(for: cardID), previous.id != session.id {
+                    eventTasks[previous.id]?.cancel()
+                    eventTasks[previous.id] = nil
+                    snapshot.runtimeSessions.removeAll { $0.cardID == cardID && $0.id != session.id }
+                }
                 upsertRuntimeSession(session)
                 listenForEvents(session: session)
                 save()
@@ -140,24 +147,117 @@ public final class WorkbenchStore: ObservableObject {
             await MainActor.run {
                 upsertRuntimeSession(ended)
                 eventTasks[session.id]?.cancel()
+                chatCardStates[cardID, default: ChatCardRuntimeState()].isGenerating = false
                 save()
             }
         }
     }
 
-    public func newThread(from cardID: UUID) {
-        guard let session = session(for: cardID) else { return }
-        Task { await runtimeEnvironment.newThread(for: session) }
+    public func updateDraft(_ text: String, for cardID: UUID) {
+        chatCardStates[cardID, default: ChatCardRuntimeState()].draft = text
     }
 
-    public func resumePreviousThread(from cardID: UUID) {
-        guard let session = session(for: cardID) else { return }
-        Task { await runtimeEnvironment.resumePreviousThread(for: session) }
+    public func sendDraftMessage(from cardID: UUID) {
+        let draft = chatCardStates[cardID]?.draft.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !draft.isEmpty else { return }
+        sendMessage(draft, from: cardID)
     }
 
-    public func compactThread(from cardID: UUID) {
+    public func sendMessage(_ text: String, from cardID: UUID) {
         guard let session = session(for: cardID) else { return }
-        Task { await runtimeEnvironment.compactCurrentThread(for: session) }
+        var state = chatCardStates[cardID, default: ChatCardRuntimeState()]
+        state.messages.append(ChatMessageRecord(role: .user, text: text))
+        state.draft = ""
+        state.lastError = nil
+        chatCardStates[cardID] = state
+        Task {
+            do {
+                try await runtimeEnvironment.sendUserMessage(text, for: session)
+            } catch {
+                await MainActor.run {
+                    self.chatCardStates[cardID, default: ChatCardRuntimeState()].lastError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    public func interruptTurn(from cardID: UUID) {
+        guard let session = session(for: cardID) else { return }
+        Task {
+            do {
+                try await runtimeEnvironment.interruptTurn(for: session)
+            } catch {
+                await MainActor.run {
+                    self.chatCardStates[cardID, default: ChatCardRuntimeState()].lastError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    public func resumeThread(_ thread: CodexThreadRecord, from cardID: UUID) {
+        guard let session = session(for: cardID) else { return }
+        guard let remoteID = thread.remoteID else { return }
+        Task {
+            do {
+                try await runtimeEnvironment.resumeThread(remoteID: remoteID, for: session)
+            } catch {
+                await MainActor.run {
+                    self.chatCardStates[cardID, default: ChatCardRuntimeState()].lastError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    public func forkActiveThread(from cardID: UUID) {
+        guard let session = session(for: cardID), let remoteID = session.activeRemoteThreadID else { return }
+        Task {
+            do {
+                try await runtimeEnvironment.forkThread(remoteID: remoteID, for: session)
+            } catch {
+                await MainActor.run {
+                    self.chatCardStates[cardID, default: ChatCardRuntimeState()].lastError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    public func rollbackActiveThread(from cardID: UUID, droppingTurns turns: Int = 1) {
+        guard let session = session(for: cardID) else { return }
+        Task {
+            do {
+                try await runtimeEnvironment.rollbackThread(for: session, droppingTurns: turns)
+            } catch {
+                await MainActor.run {
+                    self.chatCardStates[cardID, default: ChatCardRuntimeState()].lastError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    public func sendShellCommand(_ command: String, from cardID: UUID) {
+        guard let session = session(for: cardID) else { return }
+        Task {
+            do {
+                try await runtimeEnvironment.sendShellCommand(command, for: session)
+            } catch {
+                await MainActor.run {
+                    self.chatCardStates[cardID, default: ChatCardRuntimeState()].lastError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    public func resolveApproval(_ approval: ApprovalRequestRecord, decision: ApprovalDecision, from cardID: UUID) {
+        guard let session = session(for: cardID) else { return }
+        Task {
+            do {
+                try await runtimeEnvironment.resolveApproval(requestID: approval.requestID, decision: decision, for: session)
+            } catch {
+                await MainActor.run {
+                    self.chatCardStates[cardID, default: ChatCardRuntimeState()].lastError = error.localizedDescription
+                }
+            }
+        }
     }
 
     public func attemptRuntimeRestoration() {
@@ -191,12 +291,16 @@ public final class WorkbenchStore: ObservableObject {
         }
     }
 
-    public func agentCard() -> CardInstance? {
+    public func codexCard() -> CardInstance? {
         selectedWorkspace?.cards.first(where: { $0.kind == .agentChat })
     }
 
     public func session(for cardID: UUID) -> RuntimeSessionRecord? {
         snapshot.runtimeSessions.first(where: { $0.cardID == cardID })
+    }
+
+    public func chatState(for cardID: UUID) -> ChatCardRuntimeState {
+        chatCardStates[cardID, default: ChatCardRuntimeState()]
     }
 
     public func activeRuntimeSession(projectID: UUID? = nil) -> RuntimeSessionRecord? {
@@ -265,18 +369,18 @@ public final class WorkbenchStore: ObservableObject {
     }
 
     public static func makeDefaultWorkspace(name: String) -> WorkspaceRecord {
-        let agent = CardInstance(kind: .agentChat, followsActiveThread: false)
+        let codex = CardInstance(kind: .agentChat, followsActiveThread: false)
         let graph = CardInstance(kind: .threadGraph, followsActiveThread: true)
         let change = CardInstance(kind: .changeTracking, followsActiveThread: true)
         let diff = CardInstance(kind: .diff, followsActiveThread: true)
         let editor = CardInstance(kind: .editor, followsActiveThread: false)
         let notes = CardInstance(kind: .notes, followsActiveThread: false)
 
-        let cards = [agent, graph, change, diff, editor, notes]
+        let cards = [codex, graph, change, diff, editor, notes]
         let leftColumn = WorkspaceLayoutNode.split(
             axis: .vertical,
             ratio: 0.58,
-            first: .leaf(agent.id),
+            first: .leaf(codex.id),
             second: .leaf(change.id)
         )
         let rightBottom = WorkspaceLayoutNode.split(
@@ -296,7 +400,7 @@ public final class WorkbenchStore: ObservableObject {
             name: name,
             cards: cards,
             layout: root,
-            focusedCardID: agent.id
+            focusedCardID: codex.id
         )
     }
 
@@ -315,11 +419,16 @@ public final class WorkbenchStore: ObservableObject {
     private func handle(_ event: CodexAppServerEvent, for runtimeSession: RuntimeSessionRecord) {
         switch event {
         case .runtimeStatus(let status):
-            var updated = runtimeSession
+            var updated = session(for: runtimeSession.cardID) ?? runtimeSession
             updated.status = status
             updated.updatedAt = .now
             upsertRuntimeSession(updated)
-        case .threadActivated(let thread):
+        case .runtimeError(let message):
+            var state = chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()]
+            state.lastError = message
+            state.isGenerating = false
+            chatCardStates[runtimeSession.cardID] = state
+        case .threadUpdated(let thread):
             mutateProject(id: thread.projectID) { project in
                 if let index = project.threads.firstIndex(where: { $0.id == thread.id }) {
                     project.threads[index] = thread
@@ -329,21 +438,73 @@ public final class WorkbenchStore: ObservableObject {
             }
             if var runtime = self.session(for: runtimeSession.cardID) {
                 runtime.activeThreadID = thread.id
+                runtime.activeRemoteThreadID = thread.remoteID
                 runtime.updatedAt = Date.now
                 upsertRuntimeSession(runtime)
             }
-        case .turnCreated(let turn):
+        case .turnUpdated(let turn):
             mutateProjectContainingThread(turn.threadID) { project in
-                if !project.turns.contains(where: { $0.id == turn.id }) {
+                if let index = project.turns.firstIndex(where: { $0.id == turn.id }) {
+                    project.turns[index] = turn
+                } else {
                     project.turns.append(turn)
                 }
             }
-        case .itemCreated(let item):
+            chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()].activeTurnID = turn.id
+            chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()].activeRemoteTurnID = turn.remoteID
+            chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()].isGenerating = true
+        case .turnCompleted(let turnID):
+            chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()].activeTurnID = nil
+            chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()].activeRemoteTurnID = nil
+            chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()].isGenerating = false
+            if let index = chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()].toolProgress.indices.last {
+                _ = index
+            }
+            _ = turnID
+        case .itemUpdated(let item):
             mutateProjectContainingTurn(item.turnID) { project in
-                if !project.items.contains(where: { $0.id == item.id }) {
+                if let index = project.items.firstIndex(where: { $0.id == item.id }) {
+                    project.items[index] = item
+                } else {
                     project.items.append(item)
                 }
             }
+            if item.kind == .response {
+                var state = chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()]
+                if !state.messages.contains(where: { $0.itemID == item.id }) {
+                    state.messages.append(ChatMessageRecord(role: .assistant, text: "", itemID: item.id))
+                    chatCardStates[runtimeSession.cardID] = state
+                }
+            }
+        case .assistantDelta(let itemID, _, let delta):
+            var state = chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()]
+            if let index = state.messages.firstIndex(where: { $0.itemID == itemID }) {
+                state.messages[index].text.append(delta)
+            } else {
+                state.messages.append(ChatMessageRecord(role: .assistant, text: delta, itemID: itemID))
+            }
+            state.isGenerating = true
+            chatCardStates[runtimeSession.cardID] = state
+        case .toolProgress(let progress):
+            var state = chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()]
+            state.toolProgress.append(progress)
+            chatCardStates[runtimeSession.cardID] = state
+        case .shellOutput(let output):
+            var state = chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()]
+            state.shellOutput.append(output)
+            chatCardStates[runtimeSession.cardID] = state
+        case .approvalRequested(let approval):
+            var state = chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()]
+            state.pendingApprovals.append(approval)
+            state.isGenerating = false
+            chatCardStates[runtimeSession.cardID] = state
+        case .approvalResolved(let requestID, _):
+            var state = chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()]
+            state.pendingApprovals.removeAll { $0.requestID == requestID }
+            chatCardStates[runtimeSession.cardID] = state
+        case .fileChanged(let change):
+            guard let projectID = selectedProject?.project.id else { break }
+            applyDetectedFileChanges([change], to: projectID)
         }
         save()
     }
@@ -422,6 +583,8 @@ public final class WorkbenchStore: ObservableObject {
 
     private func upsertRuntimeSession(_ session: RuntimeSessionRecord) {
         if let index = snapshot.runtimeSessions.firstIndex(where: { $0.id == session.id }) {
+            snapshot.runtimeSessions[index] = session
+        } else if let index = snapshot.runtimeSessions.firstIndex(where: { $0.cardID == session.cardID }) {
             snapshot.runtimeSessions[index] = session
         } else {
             snapshot.runtimeSessions.append(session)

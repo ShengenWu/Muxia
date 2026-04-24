@@ -6,6 +6,7 @@ public enum SplitAxis: String, Codable, Hashable, Sendable {
 }
 
 public enum CardKind: String, Codable, CaseIterable, Hashable, Sendable {
+    // Keep this raw value for persisted workspace compatibility; the visible card is Codex.
     case agentChat
     case threadGraph
     case changeTracking
@@ -15,7 +16,7 @@ public enum CardKind: String, Codable, CaseIterable, Hashable, Sendable {
 
     public var title: String {
         switch self {
-        case .agentChat: "Agent Chat"
+        case .agentChat: "Codex"
         case .threadGraph: "Thread Graph"
         case .changeTracking: "Change Tracking"
         case .diff: "Diff"
@@ -46,6 +47,9 @@ public enum ItemKind: String, Codable, Hashable, Sendable {
     case command
     case summary
     case fileEdit
+    case approval
+    case tool
+    case error
 }
 
 public enum ArtifactKind: String, Codable, Hashable, Sendable {
@@ -162,6 +166,7 @@ public struct RuntimeSessionRecord: Identifiable, Codable, Hashable, Sendable {
     public var projectID: UUID
     public var status: RuntimeStatus
     public var activeThreadID: UUID?
+    public var activeRemoteThreadID: String?
     public var reconnectToken: String
     public var updatedAt: Date
 
@@ -171,6 +176,7 @@ public struct RuntimeSessionRecord: Identifiable, Codable, Hashable, Sendable {
         projectID: UUID,
         status: RuntimeStatus,
         activeThreadID: UUID? = nil,
+        activeRemoteThreadID: String? = nil,
         reconnectToken: String = UUID().uuidString,
         updatedAt: Date = .now
     ) {
@@ -179,6 +185,7 @@ public struct RuntimeSessionRecord: Identifiable, Codable, Hashable, Sendable {
         self.projectID = projectID
         self.status = status
         self.activeThreadID = activeThreadID
+        self.activeRemoteThreadID = activeRemoteThreadID
         self.reconnectToken = reconnectToken
         self.updatedAt = updatedAt
     }
@@ -186,6 +193,7 @@ public struct RuntimeSessionRecord: Identifiable, Codable, Hashable, Sendable {
 
 public struct CodexThreadRecord: Identifiable, Codable, Hashable, Sendable {
     public var id: UUID
+    public var remoteID: String?
     public var projectID: UUID
     public var title: String
     public var state: ThreadState
@@ -195,6 +203,7 @@ public struct CodexThreadRecord: Identifiable, Codable, Hashable, Sendable {
 
     public init(
         id: UUID = UUID(),
+        remoteID: String? = nil,
         projectID: UUID,
         title: String,
         state: ThreadState = .active,
@@ -203,6 +212,7 @@ public struct CodexThreadRecord: Identifiable, Codable, Hashable, Sendable {
         summary: String? = nil
     ) {
         self.id = id
+        self.remoteID = remoteID
         self.projectID = projectID
         self.title = title
         self.state = state
@@ -214,12 +224,14 @@ public struct CodexThreadRecord: Identifiable, Codable, Hashable, Sendable {
 
 public struct CodexTurnRecord: Identifiable, Codable, Hashable, Sendable {
     public var id: UUID
+    public var remoteID: String?
     public var threadID: UUID
     public var index: Int
     public var createdAt: Date
 
-    public init(id: UUID = UUID(), threadID: UUID, index: Int, createdAt: Date = .now) {
+    public init(id: UUID = UUID(), remoteID: String? = nil, threadID: UUID, index: Int, createdAt: Date = .now) {
         self.id = id
+        self.remoteID = remoteID
         self.threadID = threadID
         self.index = index
         self.createdAt = createdAt
@@ -228,6 +240,7 @@ public struct CodexTurnRecord: Identifiable, Codable, Hashable, Sendable {
 
 public struct CodexItemRecord: Identifiable, Codable, Hashable, Sendable {
     public var id: UUID
+    public var remoteID: String?
     public var turnID: UUID
     public var kind: ItemKind
     public var title: String
@@ -236,6 +249,7 @@ public struct CodexItemRecord: Identifiable, Codable, Hashable, Sendable {
 
     public init(
         id: UUID = UUID(),
+        remoteID: String? = nil,
         turnID: UUID,
         kind: ItemKind,
         title: String,
@@ -243,6 +257,7 @@ public struct CodexItemRecord: Identifiable, Codable, Hashable, Sendable {
         createdAt: Date = .now
     ) {
         self.id = id
+        self.remoteID = remoteID
         self.turnID = turnID
         self.kind = kind
         self.title = title
@@ -369,5 +384,150 @@ public struct DetectedFileChange: Hashable, Sendable {
         self.before = before
         self.after = after
         self.timestamp = timestamp
+    }
+}
+
+public enum ChatMessageRole: String, Codable, Hashable, Sendable {
+    case user
+    case assistant
+    case system
+}
+
+public struct ChatMessageRecord: Identifiable, Codable, Hashable, Sendable {
+    public var id: UUID
+    public var role: ChatMessageRole
+    public var text: String
+    public var itemID: UUID?
+    public var createdAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        role: ChatMessageRole,
+        text: String,
+        itemID: UUID? = nil,
+        createdAt: Date = .now
+    ) {
+        self.id = id
+        self.role = role
+        self.text = text
+        self.itemID = itemID
+        self.createdAt = createdAt
+    }
+}
+
+public enum ApprovalKind: String, Codable, Hashable, Sendable {
+    case command
+    case fileChange
+    case permissions
+}
+
+public enum ApprovalDecision: String, Codable, Hashable, Sendable {
+    case approve
+    case deny
+}
+
+public struct ApprovalRequestRecord: Identifiable, Codable, Hashable, Sendable {
+    public var id: UUID
+    public var requestID: String
+    public var itemID: UUID?
+    public var kind: ApprovalKind
+    public var title: String
+    public var message: String
+    public var createdAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        requestID: String,
+        itemID: UUID? = nil,
+        kind: ApprovalKind,
+        title: String,
+        message: String,
+        createdAt: Date = .now
+    ) {
+        self.id = id
+        self.requestID = requestID
+        self.itemID = itemID
+        self.kind = kind
+        self.title = title
+        self.message = message
+        self.createdAt = createdAt
+    }
+}
+
+public struct ToolProgressRecord: Identifiable, Codable, Hashable, Sendable {
+    public var id: UUID
+    public var itemID: UUID?
+    public var label: String
+    public var status: String
+    public var createdAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        itemID: UUID? = nil,
+        label: String,
+        status: String,
+        createdAt: Date = .now
+    ) {
+        self.id = id
+        self.itemID = itemID
+        self.label = label
+        self.status = status
+        self.createdAt = createdAt
+    }
+}
+
+public struct ShellOutputRecord: Identifiable, Codable, Hashable, Sendable {
+    public var id: UUID
+    public var itemID: UUID?
+    public var stream: String
+    public var text: String
+    public var createdAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        itemID: UUID? = nil,
+        stream: String,
+        text: String,
+        createdAt: Date = .now
+    ) {
+        self.id = id
+        self.itemID = itemID
+        self.stream = stream
+        self.text = text
+        self.createdAt = createdAt
+    }
+}
+
+public struct ChatCardRuntimeState: Hashable, Sendable {
+    public var draft: String
+    public var messages: [ChatMessageRecord]
+    public var activeTurnID: UUID?
+    public var activeRemoteTurnID: String?
+    public var isGenerating: Bool
+    public var pendingApprovals: [ApprovalRequestRecord]
+    public var toolProgress: [ToolProgressRecord]
+    public var shellOutput: [ShellOutputRecord]
+    public var lastError: String?
+
+    public init(
+        draft: String = "",
+        messages: [ChatMessageRecord] = [],
+        activeTurnID: UUID? = nil,
+        activeRemoteTurnID: String? = nil,
+        isGenerating: Bool = false,
+        pendingApprovals: [ApprovalRequestRecord] = [],
+        toolProgress: [ToolProgressRecord] = [],
+        shellOutput: [ShellOutputRecord] = [],
+        lastError: String? = nil
+    ) {
+        self.draft = draft
+        self.messages = messages
+        self.activeTurnID = activeTurnID
+        self.activeRemoteTurnID = activeRemoteTurnID
+        self.isGenerating = isGenerating
+        self.pendingApprovals = pendingApprovals
+        self.toolProgress = toolProgress
+        self.shellOutput = shellOutput
+        self.lastError = lastError
     }
 }

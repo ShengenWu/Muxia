@@ -153,7 +153,7 @@ private struct CardSurfaceView: View {
             Group {
                 switch card.kind {
                 case .agentChat:
-                    AgentChatCardView(store: store, card: card)
+                    CodexCardView(store: store, card: card)
                 case .threadGraph:
                     ThreadGraphCardView(store: store, card: card)
                 case .changeTracking:
@@ -180,66 +180,234 @@ private struct CardSurfaceView: View {
     }
 }
 
-private struct AgentChatCardView: View {
+private struct CodexCardView: View {
     @ObservedObject var store: WorkbenchStore
     let card: CardInstance
+    @State private var isHistoryPresented = false
 
     var body: some View {
         let session = store.session(for: card.id)
+        let chatState = store.chatState(for: card.id)
         let threads = store.threads()
+        let activeThread = session?.activeThreadID.flatMap { activeID in
+            threads.first(where: { $0.id == activeID })
+        }
 
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
-                StatusPill(text: session?.status.rawValue.capitalized ?? "Idle", isActive: session?.status == .running)
-                Spacer()
-                Button("Start") { store.startSession(for: card.id) }
-                Button("End") { store.endSession(for: card.id) }.disabled(session == nil)
-            }
-
-            HStack {
-                Button("New") { store.newThread(from: card.id) }.disabled(session == nil)
-                Button("Resume") { store.resumePreviousThread(from: card.id) }.disabled(session == nil || threads.count < 2)
-                Button("Compact") { store.compactThread(from: card.id) }.disabled(session == nil)
-            }
-            .buttonStyle(.bordered)
-
-            if let threadID = session?.activeThreadID, let thread = threads.first(where: { $0.id == threadID }) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Active Thread")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(activeThread?.title ?? "Codex session")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(session?.status.rawValue.capitalized ?? "Idle")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(thread.title)
-                        .font(.title3.weight(.semibold))
-                    Text(thread.state.rawValue.capitalized)
-                        .font(.caption)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(session?.status == .running ? .green : .secondary)
                 }
+                Spacer()
+                if chatState.isGenerating {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Button {
+                    isHistoryPresented.toggle()
+                } label: {
+                    Label("History", systemImage: "clock.arrow.circlepath")
+                }
+                .popover(isPresented: $isHistoryPresented) {
+                    CodexThreadHistoryPopover(
+                        threads: threads,
+                        activeThreadID: session?.activeThreadID,
+                        selectThread: { thread in
+                            store.resumeThread(thread, from: card.id)
+                            isHistoryPresented = false
+                        }
+                    )
+                }
+                CodexCardActionsMenu(store: store, card: card, session: session, chatState: chatState)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
 
-            Divider()
-
-            Text("Thread History")
-                .font(.subheadline.weight(.semibold))
+            if let error = chatState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
+            }
 
             ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    if chatState.messages.isEmpty {
+                        ContentUnavailableView(
+                            "Start a Codex conversation",
+                            systemImage: "bubble.left.and.bubble.right",
+                            description: Text("Messages for the current session will appear here.")
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 220)
+                    } else {
+                        ForEach(chatState.messages) { message in
+                            CodexMessageBubble(message: message, isGenerating: chatState.isGenerating)
+                        }
+                    }
+
+                    if chatState.isGenerating && !chatState.messages.contains(where: { $0.role == .assistant }) {
+                        CodexMessageBubble(
+                            message: ChatMessageRecord(role: .assistant, text: ""),
+                            isGenerating: true
+                        )
+                    }
+                }
+                .padding(14)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if !chatState.pendingApprovals.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(threads) { thread in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(thread.title)
+                    Text("Approvals")
+                        .font(.subheadline.weight(.semibold))
+                    ForEach(chatState.pendingApprovals) { approval in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(approval.title)
                                 .font(.body.weight(.medium))
-                            Text(thread.state.rawValue.capitalized)
+                            Text(approval.message)
                                 .font(.caption)
-                                .foregroundStyle(thread.id == session?.activeThreadID ? .green : .secondary)
+                                .foregroundStyle(.secondary)
+                            HStack {
+                                Button("Approve") { store.resolveApproval(approval, decision: .approve, from: card.id) }
+                                Button("Deny") { store.resolveApproval(approval, decision: .deny, from: card.id) }
+                            }
+                            .buttonStyle(.bordered)
                         }
                         .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.white.opacity(0.04))
+                        .background(Color.orange.opacity(0.12))
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                 }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
+            }
+
+            HStack(spacing: 8) {
+                TextField(
+                    "Send a message to Codex",
+                    text: Binding(
+                        get: { store.chatState(for: card.id).draft },
+                        set: { store.updateDraft($0, for: card.id) }
+                    ),
+                    axis: .vertical
+                )
+                .textFieldStyle(.roundedBorder)
+
+                Button("Send") { store.sendDraftMessage(from: card.id) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .disabled(session == nil)
+            }
+            .padding(14)
+            .background(Color.black.opacity(0.18))
+        }
+    }
+}
+
+private struct CodexMessageBubble: View {
+    let message: ChatMessageRecord
+    let isGenerating: Bool
+
+    var body: some View {
+        let isAssistant = message.role == .assistant
+        VStack(alignment: .leading, spacing: 5) {
+            Text(message.role.rawValue.capitalized)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(isAssistant ? .green : .secondary)
+            Text(message.text.isEmpty && isAssistant && isGenerating ? "Thinking..." : message.text)
+                .textSelection(.enabled)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(isAssistant ? 0.06 : 0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct CodexThreadHistoryPopover: View {
+    let threads: [CodexThreadRecord]
+    let activeThreadID: UUID?
+    let selectThread: (CodexThreadRecord) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Codex History")
+                .font(.headline)
+
+            if threads.isEmpty {
+                Text("No previous sessions yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 280, alignment: .leading)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(threads) { thread in
+                            Button {
+                                selectThread(thread)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: thread.id == activeThreadID ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(thread.id == activeThreadID ? .green : .secondary)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(thread.title)
+                                            .font(.body.weight(.medium))
+                                            .lineLimit(1)
+                                        Text(thread.state.rawValue.capitalized)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(8)
+                                .frame(width: 320, alignment: .leading)
+                                .background(Color.white.opacity(thread.id == activeThreadID ? 0.08 : 0.03))
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxHeight: 360)
             }
         }
-        .padding()
+        .padding(14)
+    }
+}
+
+private struct CodexCardActionsMenu: View {
+    @ObservedObject var store: WorkbenchStore
+    let card: CardInstance
+    let session: RuntimeSessionRecord?
+    let chatState: ChatCardRuntimeState
+
+    var body: some View {
+        Menu {
+            Button("Start Codex") { store.startSession(for: card.id) }
+            Button("Interrupt") { store.interruptTurn(from: card.id) }
+                .disabled(session == nil || !chatState.isGenerating)
+            Button("End Session") { store.endSession(for: card.id) }
+                .disabled(session == nil)
+            Divider()
+            Button("Fork Active Thread") { store.forkActiveThread(from: card.id) }
+                .disabled(session?.activeRemoteThreadID == nil)
+            Button("Rollback One Turn") { store.rollbackActiveThread(from: card.id) }
+                .disabled(session?.activeRemoteThreadID == nil)
+            Button("Run pwd") { store.sendShellCommand("pwd", from: card.id) }
+                .disabled(session?.activeRemoteThreadID == nil)
+            if !chatState.toolProgress.isEmpty || !chatState.shellOutput.isEmpty {
+                Divider()
+                Text("Recent activity is available in thread history.")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
     }
 }
 
