@@ -229,9 +229,7 @@ private struct CodexCardView: View {
             .padding(.vertical, 10)
 
             if let error = chatState.lastError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                CopyableErrorBanner(error: error)
                     .padding(.horizontal, 14)
                     .padding(.bottom, 8)
             }
@@ -288,16 +286,31 @@ private struct CodexCardView: View {
                 .padding(.bottom, 10)
             }
 
-            HStack(spacing: 8) {
-                TextField(
-                    "Send a message to Codex",
+            HStack(alignment: .bottom, spacing: 8) {
+                ChatComposerTextView(
                     text: Binding(
                         get: { store.chatState(for: card.id).draft },
                         set: { store.updateDraft($0, for: card.id) }
                     ),
-                    axis: .vertical
+                    onSend: { store.sendDraftMessage(from: card.id) }
                 )
-                .textFieldStyle(.roundedBorder)
+                .frame(minHeight: 38, idealHeight: 38, maxHeight: 72)
+                .padding(.horizontal, 2)
+                .background(Color.white.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+                .overlay(alignment: .leading) {
+                    if store.chatState(for: card.id).draft.isEmpty {
+                        Text("Message Codex")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 14)
+                            .allowsHitTesting(false)
+                    }
+                }
 
                 Button("Send") { store.sendDraftMessage(from: card.id) }
                     .buttonStyle(.borderedProminent)
@@ -307,6 +320,119 @@ private struct CodexCardView: View {
             .padding(14)
             .background(Color.black.opacity(0.18))
         }
+    }
+}
+
+private struct CopyableErrorBanner: View {
+    let error: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: true) {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(error, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.borderless)
+            .help("Copy error")
+        }
+        .padding(10)
+        .background(Color.red.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.red.opacity(0.18), lineWidth: 1)
+        )
+    }
+}
+
+private struct ChatComposerTextView: NSViewRepresentable {
+    @Binding var text: String
+    let onSend: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let textView = ComposerNSTextView()
+        textView.delegate = context.coordinator
+        textView.onSend = onSend
+        textView.string = text
+        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        textView.textColor = .white
+        textView.insertionPointColor = .white
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+
+        let scrollView = NSScrollView()
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = textView
+
+        textView.minSize = NSSize(width: 0, height: 38)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? ComposerNSTextView else { return }
+        textView.onSend = onSend
+        if textView.string != text {
+            textView.string = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding var text: String
+
+        init(text: Binding<String>) {
+            self._text = text
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            text = textView.string
+        }
+    }
+}
+
+private final class ComposerNSTextView: NSTextView {
+    var onSend: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        let keyCode = event.keyCode
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let isReturn = keyCode == 36 || keyCode == 76
+
+        if isReturn && !modifiers.contains(.shift) {
+            onSend?()
+            return
+        }
+
+        super.keyDown(with: event)
     }
 }
 

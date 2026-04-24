@@ -3,6 +3,62 @@ import Foundation
 @testable import MuxiaCore
 
 struct WorkbenchStoreTests {
+    @Test func jsonRPCStdioFramingEncodesAndDecodesLineDelimitedMessages() throws {
+        let message = JSONRPCWireMessage(
+            id: .number(1),
+            method: "initialize",
+            params: .object([
+                "clientInfo": .object([
+                    "name": .string("Muxia")
+                ])
+            ]),
+            result: nil,
+            error: nil
+        )
+
+        let framed = try JSONRPCStdioFraming.encode(message)
+        let framedText = String(decoding: framed, as: UTF8.self)
+        #expect(framedText.hasPrefix("{"))
+        #expect(framedText.hasSuffix("\n"))
+
+        var buffer = framed
+        let decoded = try JSONRPCStdioFraming.decodeAvailableMessages(from: &buffer)
+        #expect(decoded.count == 1)
+        #expect(decoded[0].method == "initialize")
+        #expect(decoded[0].id?.intValue == 1)
+        #expect(buffer.isEmpty)
+    }
+
+    @Test func jsonRPCWireMessageDecodesResponsesWithoutExplicitJSONRPCVersion() throws {
+        let payload = Data(#"{"id":1,"result":{"userAgent":"Muxia/0.124.0","codexHome":"/Users/shengen/.codex","platformFamily":"unix","platformOs":"macos"}}"#.utf8)
+        let decoded = try JSONDecoder().decode(JSONRPCWireMessage.self, from: payload)
+
+        #expect(decoded.id?.intValue == 1)
+        #expect(decoded.result?.objectValue?["platformOs"]?.stringValue == "macos")
+        #expect(decoded.jsonrpc == nil)
+    }
+
+    @Test func appServerExecutableResolverPrefersExplicitExecutable() throws {
+        let temporaryCodex = temporaryDirectory(named: "codex-bin").appendingPathComponent("codex")
+        FileManager.default.createFile(atPath: temporaryCodex.path, contents: Data())
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: temporaryCodex.path)
+
+        let resolved = AppServerExecutableResolver.resolveCodexExecutable(
+            environment: ["MUXIA_CODEX_EXECUTABLE": temporaryCodex.path]
+        )
+
+        #expect(resolved == temporaryCodex.path)
+        #expect(AppServerExecutableResolver.defaultArguments(for: resolved) == ["app-server", "--listen", "stdio://"])
+    }
+
+    @Test func appServerLaunchEnvironmentIncludesHomebrewPaths() {
+        let environment = AppServerExecutableResolver.launchEnvironment(base: ["PATH": "/usr/bin"])
+        let path = environment["PATH"] ?? ""
+
+        #expect(path.hasPrefix("/opt/homebrew/bin:/usr/local/bin:"))
+        #expect(path.split(separator: ":").filter { $0 == "/usr/bin" }.count == 1)
+    }
+
     @Test func openingProjectSeedsDefaultWorkspaceAndCards() async throws {
         let persistence = PrototypePersistenceController(fileURL: temporaryFileURL())
         let store = await MainActor.run {
@@ -232,9 +288,35 @@ struct WorkbenchStoreTests {
         #expect(methods.contains("thread/start"))
         #expect(methods.contains("turn/start"))
         #expect(methods.contains("turn/steer"))
+        let threadStartParams = await transport.lastParams(for: "thread/start")
+        #expect(threadStartParams?.objectValue?["sessionStartSource"]?.stringValue == "startup")
 
         let messages = await MainActor.run { store.chatState(for: store.codexCard()!.id).messages }
         #expect(messages.contains(where: { $0.role == .assistant && !$0.text.isEmpty }))
+    }
+
+    @Test func appServerCompletesTurnFromCompletedResponseItemWithoutExplicitTurnCompleted() async throws {
+        let persistence = PrototypePersistenceController(fileURL: temporaryFileURL())
+        let transport = ScriptedAppServerTransport(startupMode: .itemCompletedOnly)
+        let runtime = AppServerRuntimeService(transportFactory: { transport })
+        let store = await MainActor.run {
+            WorkbenchStore(persistence: persistence, runtimeEnvironment: runtime)
+        }
+        let url = temporaryDirectory(named: "scripted-item-completed")
+        await MainActor.run {
+            store.openProject(at: url)
+            store.startSession(for: store.codexCard()!.id)
+        }
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        await MainActor.run {
+            store.sendMessage("first prompt", from: store.codexCard()!.id)
+        }
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        let chatState = await MainActor.run { store.chatState(for: store.codexCard()!.id) }
+        #expect(!chatState.isGenerating)
+        #expect(chatState.messages.contains(where: { $0.role == .assistant && $0.text == "completed response body" }))
     }
 
     @Test func appServerHandshakeFailureSurfacesDisconnectedState() async throws {
@@ -338,6 +420,7 @@ private func temporaryFileURL() -> URL {
 actor ScriptedAppServerTransport: AppServerTransporting {
     enum StartupMode: Sendable {
         case normal
+        case itemCompletedOnly
         case failInitialize
         case failStreamBeforeInitialize([String])
     }
@@ -345,6 +428,7 @@ actor ScriptedAppServerTransport: AppServerTransporting {
     private let startupMode: StartupMode
     private var continuation: AsyncThrowingStream<AppServerEnvelope, Error>.Continuation?
     private var methods: [String] = []
+    private var paramsByMethod: [String: JSONValue?] = [:]
     private let threadID = "scripted-thread-1"
     private var activeTurnID = "scripted-turn-1"
 
@@ -360,10 +444,13 @@ actor ScriptedAppServerTransport: AppServerTransporting {
 
     func sendRequest(id: JSONRPCID, method: String, params: JSONValue?) async throws {
         methods.append(method)
+        paramsByMethod[method] = params
         switch method {
         case "initialize":
             switch startupMode {
             case .normal:
+                continuation?.yield(.response(id: id, result: .object([:]), error: nil))
+            case .itemCompletedOnly:
                 continuation?.yield(.response(id: id, result: .object([:]), error: nil))
             case .failInitialize:
                 continuation?.yield(.response(id: id, result: nil, error: "initialize failed"))
@@ -420,6 +507,24 @@ actor ScriptedAppServerTransport: AppServerTransporting {
                     ])
                 )
             )
+            if case .itemCompletedOnly = startupMode {
+                continuation?.yield(
+                    .notification(
+                        method: "item/completed",
+                        params: .object([
+                            "threadId": .string(threadID),
+                            "turnId": .string(activeTurnID),
+                            "item": .object([
+                                "id": .string("assistant-item-1"),
+                                "type": .string("agentMessage"),
+                                "title": .string("Assistant"),
+                                "text": .string("completed response body")
+                            ])
+                        ])
+                    )
+                )
+                return
+            }
             continuation?.yield(
                 .notification(
                     method: "item/agentMessage/delta",
@@ -467,6 +572,10 @@ actor ScriptedAppServerTransport: AppServerTransporting {
 
     func sentMethods() -> [String] {
         methods
+    }
+
+    func lastParams(for method: String) -> JSONValue? {
+        paramsByMethod[method] ?? nil
     }
 }
 

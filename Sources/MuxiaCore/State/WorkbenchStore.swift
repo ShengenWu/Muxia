@@ -473,8 +473,15 @@ public final class WorkbenchStore: ObservableObject {
                 var state = chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()]
                 if !state.messages.contains(where: { $0.itemID == item.id }) {
                     state.messages.append(ChatMessageRecord(role: .assistant, text: "", itemID: item.id))
-                    chatCardStates[runtimeSession.cardID] = state
                 }
+                if
+                    !item.detail.isEmpty,
+                    let index = state.messages.firstIndex(where: { $0.itemID == item.id }),
+                    state.messages[index].text.isEmpty
+                {
+                    state.messages[index].text = item.detail
+                }
+                chatCardStates[runtimeSession.cardID] = state
             }
         case .assistantDelta(let itemID, _, let delta):
             var state = chatCardStates[runtimeSession.cardID, default: ChatCardRuntimeState()]

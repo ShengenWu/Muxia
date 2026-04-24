@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import os
 
 public enum JSONValue: Codable, Hashable, Sendable {
     case string(String)
@@ -93,8 +94,8 @@ public enum JSONRPCID: Hashable, Sendable {
     }
 }
 
-private struct JSONRPCWireMessage: Codable, Sendable {
-    var jsonrpc: String = "2.0"
+struct JSONRPCWireMessage: Codable, Sendable {
+    var jsonrpc: String?
     var id: JSONValue?
     var method: String?
     var params: JSONValue?
@@ -102,9 +103,100 @@ private struct JSONRPCWireMessage: Codable, Sendable {
     var error: JSONRPCErrorPayload?
 }
 
-private struct JSONRPCErrorPayload: Codable, Sendable {
+struct JSONRPCErrorPayload: Codable, Sendable {
     var code: Int
     var message: String
+}
+
+enum JSONRPCStdioFraming {
+    private static let headerSeparator = Data("\r\n\r\n".utf8)
+
+    static func encode(_ message: JSONRPCWireMessage, encoder: JSONEncoder = JSONEncoder()) throws -> Data {
+        var body = try encoder.encode(message)
+        body.append(0x0A)
+        return body
+    }
+
+    static func decodeAvailableMessages(
+        from buffer: inout Data,
+        decoder: JSONDecoder = JSONDecoder()
+    ) throws -> [JSONRPCWireMessage] {
+        var messages: [JSONRPCWireMessage] = []
+        while let message = try decodeNextMessage(from: &buffer, decoder: decoder) {
+            messages.append(message)
+        }
+        return messages
+    }
+
+    private static func decodeNextMessage(
+        from buffer: inout Data,
+        decoder: JSONDecoder
+    ) throws -> JSONRPCWireMessage? {
+        if let framed = try decodeFramedMessage(from: &buffer, decoder: decoder) {
+            return framed
+        }
+        return try decodeLineDelimitedMessage(from: &buffer, decoder: decoder)
+    }
+
+    private static func decodeFramedMessage(
+        from buffer: inout Data,
+        decoder: JSONDecoder
+    ) throws -> JSONRPCWireMessage? {
+        guard let separatorRange = buffer.range(of: headerSeparator) else {
+            return nil
+        }
+
+        let headerData = buffer.subdata(in: 0..<separatorRange.lowerBound)
+        guard let headerText = String(data: headerData, encoding: .utf8) else {
+            throw RuntimeTransportError.streamDecodingFailed("Invalid UTF-8 in JSON-RPC headers")
+        }
+
+        let contentLength = try parseContentLength(from: headerText)
+        let bodyStart = separatorRange.upperBound
+        guard buffer.count >= bodyStart + contentLength else {
+            return nil
+        }
+
+        let bodyRange = bodyStart..<(bodyStart + contentLength)
+        let body = buffer.subdata(in: bodyRange)
+        buffer.removeSubrange(0..<bodyRange.upperBound)
+        return try decoder.decode(JSONRPCWireMessage.self, from: body)
+    }
+
+    private static func decodeLineDelimitedMessage(
+        from buffer: inout Data,
+        decoder: JSONDecoder
+    ) throws -> JSONRPCWireMessage? {
+        guard
+            let newlineIndex = buffer.firstIndex(of: 0x0A),
+            let firstByte = buffer.first(where: { !$0.isASCIIWhitespace })
+        else {
+            return nil
+        }
+
+        guard firstByte == UInt8(ascii: "{") || firstByte == UInt8(ascii: "[") else {
+            return nil
+        }
+
+        let line = buffer.subdata(in: 0..<newlineIndex)
+        buffer.removeSubrange(0...newlineIndex)
+        let trimmed = line.drop { $0.isASCIIWhitespace }
+        guard !trimmed.isEmpty else { return nil }
+        return try decoder.decode(JSONRPCWireMessage.self, from: Data(trimmed))
+    }
+
+    private static func parseContentLength(from headerText: String) throws -> Int {
+        for line in headerText.split(separator: "\r\n") {
+            let parts = line.split(separator: ":", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            if parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "content-length",
+               let value = Int(parts[1].trimmingCharacters(in: .whitespacesAndNewlines))
+            {
+                return value
+            }
+        }
+        throw RuntimeTransportError.streamDecodingFailed("Missing Content-Length header")
+    }
 }
 
 public enum AppServerEnvelope: Sendable {
@@ -121,23 +213,83 @@ public protocol AppServerTransporting: Sendable {
     func disconnect() async
 }
 
+public enum AppServerExecutableResolver {
+    private static let homebrewPaths = [
+        "/opt/homebrew/bin/codex",
+        "/usr/local/bin/codex"
+    ]
+
+    private static let bundledAppPath = "/Applications/Codex.app/Contents/Resources/codex"
+
+    public static func resolveCodexExecutable(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> String {
+        if
+            let override = environment["MUXIA_CODEX_EXECUTABLE"],
+            !override.isEmpty,
+            fileManager.isExecutableFile(atPath: override)
+        {
+            return override
+        }
+
+        for path in homebrewPaths where fileManager.isExecutableFile(atPath: path) {
+            return path
+        }
+
+        if fileManager.isExecutableFile(atPath: bundledAppPath) {
+            return bundledAppPath
+        }
+
+        return "/usr/bin/env"
+    }
+
+    public static func defaultArguments(for executable: String) -> [String] {
+        if executable == "/usr/bin/env" {
+            return ["codex", "app-server", "--listen", "stdio://"]
+        }
+        return ["app-server", "--listen", "stdio://"]
+    }
+
+    public static func launchEnvironment(base: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+        var environment = base
+        let searchPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        let existingPath = environment["PATH"] ?? ""
+        let mergedPath = (searchPaths + existingPath.split(separator: ":").map(String.init))
+            .reduce(into: [String]()) { paths, path in
+                if !path.isEmpty, !paths.contains(path) {
+                    paths.append(path)
+                }
+            }
+            .joined(separator: ":")
+        environment["PATH"] = mergedPath
+        return environment
+    }
+}
+
 public actor SubprocessAppServerTransport: AppServerTransporting {
     private let executable: String
     private let arguments: [String]
+    private let environment: [String: String]
+    private nonisolated let logger = Logger(subsystem: "com.muxia.host", category: "AppServerRuntime")
     private let maxDiagnosticLines = 24
     private var process: Process?
     private var inputHandle: FileHandle?
+    private var outputHandle: FileHandle?
+    private var errorHandle: FileHandle?
     private var outputStream: AsyncThrowingStream<AppServerEnvelope, Error>?
-    private var readTask: Task<Void, Never>?
-    private var stderrTask: Task<Void, Never>?
     private var stderrLines: [String] = []
+    private var stdoutBuffer = Data()
+    private var stderrBuffer = Data()
 
     public init(
-        executable: String = "/usr/bin/env",
-        arguments: [String] = ["codex", "app-server", "--listen", "stdio://"]
+        executable: String = AppServerExecutableResolver.resolveCodexExecutable(),
+        arguments: [String]? = nil,
+        environment: [String: String] = AppServerExecutableResolver.launchEnvironment()
     ) {
         self.executable = executable
-        self.arguments = arguments
+        self.arguments = arguments ?? AppServerExecutableResolver.defaultArguments(for: executable)
+        self.environment = environment
     }
 
     public func connect() async throws -> AsyncThrowingStream<AppServerEnvelope, Error> {
@@ -152,51 +304,38 @@ public actor SubprocessAppServerTransport: AppServerTransporting {
 
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
+        process.environment = environment
         process.standardInput = stdin
         process.standardOutput = stdout
         process.standardError = stderr
 
         do {
+            logger.info("Launching Codex App Server: \(RuntimeTransportError.commandDescription(executable: self.executable, arguments: self.arguments), privacy: .public)")
             try process.run()
         } catch {
+            logger.error("Failed to launch Codex App Server: \(error.localizedDescription, privacy: .public)")
             throw RuntimeTransportError.launchFailed(executable: executable, arguments: arguments, underlying: error.localizedDescription)
         }
         self.process = process
         self.inputHandle = stdin.fileHandleForWriting
+        self.outputHandle = stdout.fileHandleForReading
+        self.errorHandle = stderr.fileHandleForReading
         self.stderrLines = []
-        self.stderrTask = Task {
-            do {
-                for try await line in stderr.fileHandleForReading.bytes.lines {
-                    self.appendDiagnosticLine(line)
-                }
-            } catch {
-                self.appendDiagnosticLine("stderr read failed: \(error.localizedDescription)")
-            }
-        }
+        self.stdoutBuffer = Data()
+        self.stderrBuffer = Data()
 
         let decoder = JSONDecoder()
         let stream = AsyncThrowingStream<AppServerEnvelope, Error> { continuation in
-            self.readTask = Task {
-                do {
-                    for try await line in stdout.fileHandleForReading.bytes.lines {
-                        guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                        let data = Data(line.utf8)
-                        let payload = try decoder.decode(JSONRPCWireMessage.self, from: data)
-                        if let idValue = payload.id.flatMap(Self.makeID), let method = payload.method {
-                            continuation.yield(.request(id: idValue, method: method, params: payload.params))
-                        } else if let idValue = payload.id.flatMap(Self.makeID) {
-                            continuation.yield(.response(id: idValue, result: payload.result, error: payload.error?.message))
-                        } else if let method = payload.method {
-                            continuation.yield(.notification(method: method, params: payload.params))
-                        }
-                    }
-                    if let error = self.terminationErrorIfNeeded() {
-                        continuation.finish(throwing: error)
-                    } else {
-                        continuation.finish()
-                    }
-                } catch {
-                    continuation.finish(throwing: RuntimeTransportError.streamDecodingFailed(error.localizedDescription))
+            stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+                let data = handle.availableData
+                Task {
+                    await self?.handleStdoutReadable(data, decoder: decoder, continuation: continuation)
+                }
+            }
+            stderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
+                let data = handle.availableData
+                Task {
+                    await self?.handleStderrReadable(data)
                 }
             }
         }
@@ -224,17 +363,19 @@ public actor SubprocessAppServerTransport: AppServerTransporting {
     }
 
     public func disconnect() async {
-        readTask?.cancel()
-        stderrTask?.cancel()
+        outputHandle?.readabilityHandler = nil
+        errorHandle?.readabilityHandler = nil
         if let process, process.isRunning {
             process.terminate()
         }
         process = nil
         inputHandle = nil
+        outputHandle = nil
+        errorHandle = nil
         outputStream = nil
-        readTask = nil
-        stderrTask = nil
         stderrLines = []
+        stdoutBuffer = Data()
+        stderrBuffer = Data()
     }
 
     private func send(_ message: JSONRPCWireMessage) throws {
@@ -242,23 +383,97 @@ public actor SubprocessAppServerTransport: AppServerTransporting {
             throw RuntimeTransportError.notConnected
         }
 
-        let encoder = JSONEncoder()
-        var data = try encoder.encode(message)
-        data.append(0x0A)
+        let data = try JSONRPCStdioFraming.encode(message)
+        if let method = message.method {
+            logger.debug("Sending Codex App Server message method=\(method, privacy: .public) id=\(message.id?.stringValue ?? "none", privacy: .public)")
+        }
         try inputHandle.write(contentsOf: data)
     }
 
     private func handleTermination(status: Int32) async {
         if status != 0 {
+            logger.error("Codex App Server terminated with status \(status, privacy: .public). Diagnostics: \(self.stderrLines.joined(separator: "\n"), privacy: .public)")
             outputStream = nil
+        } else {
+            logger.info("Codex App Server terminated normally")
         }
     }
 
     private func appendDiagnosticLine(_ line: String) {
         guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        logger.warning("Codex App Server stderr: \(line, privacy: .public)")
         stderrLines.append(line)
         if stderrLines.count > maxDiagnosticLines {
             stderrLines.removeFirst(stderrLines.count - maxDiagnosticLines)
+        }
+    }
+
+    private func logDecodedPayload(_ payload: JSONRPCWireMessage) {
+        if let method = payload.method, let id = payload.id?.stringValue {
+            logger.debug("Codex App Server request method=\(method, privacy: .public) id=\(id, privacy: .public)")
+        } else if let method = payload.method {
+            logger.debug("Codex App Server notification method=\(method, privacy: .public)")
+        } else if let id = payload.id?.stringValue {
+            logger.debug("Codex App Server response id=\(id, privacy: .public)")
+        } else {
+            logger.debug("Codex App Server payload without method or id")
+        }
+    }
+
+    private func handleStdoutReadable(
+        _ data: Data,
+        decoder: JSONDecoder,
+        continuation: AsyncThrowingStream<AppServerEnvelope, Error>.Continuation
+    ) async {
+        guard !data.isEmpty else {
+            logger.info("Codex App Server stdout stream closed")
+            outputHandle?.readabilityHandler = nil
+            if let error = terminationErrorIfNeeded() {
+                continuation.finish(throwing: error)
+            } else {
+                continuation.finish()
+            }
+            return
+        }
+
+        stdoutBuffer.append(data)
+        do {
+            let payloads = try JSONRPCStdioFraming.decodeAvailableMessages(from: &stdoutBuffer, decoder: decoder)
+            for payload in payloads {
+                logDecodedPayload(payload)
+                if let idValue = payload.id.flatMap(Self.makeID), let method = payload.method {
+                    continuation.yield(.request(id: idValue, method: method, params: payload.params))
+                } else if let idValue = payload.id.flatMap(Self.makeID) {
+                    continuation.yield(.response(id: idValue, result: payload.result, error: payload.error?.message))
+                } else if let method = payload.method {
+                    continuation.yield(.notification(method: method, params: payload.params))
+                }
+            }
+        } catch {
+            continuation.finish(throwing: RuntimeTransportError.streamDecodingFailed(error.localizedDescription))
+        }
+    }
+
+    private func handleStderrReadable(_ data: Data) async {
+        guard !data.isEmpty else {
+            errorHandle?.readabilityHandler = nil
+            if !stderrBuffer.isEmpty {
+                flushStderrBuffer()
+            }
+            return
+        }
+
+        stderrBuffer.append(data)
+        flushStderrBuffer()
+    }
+
+    private func flushStderrBuffer() {
+        while let newlineIndex = stderrBuffer.firstIndex(of: 0x0A) {
+            let lineData = stderrBuffer.subdata(in: 0..<newlineIndex)
+            stderrBuffer.removeSubrange(0...newlineIndex)
+            let line = String(decoding: lineData, as: UTF8.self)
+                .trimmingCharacters(in: .newlines)
+            appendDiagnosticLine(line)
         }
     }
 
@@ -285,6 +500,12 @@ public actor SubprocessAppServerTransport: AppServerTransporting {
     }
 }
 
+private extension UInt8 {
+    var isASCIIWhitespace: Bool {
+        self == 0x20 || self == 0x09 || self == 0x0A || self == 0x0D
+    }
+}
+
 public enum RuntimeTransportError: LocalizedError {
     case notConnected
     case launchFailed(executable: String, arguments: [String], underlying: String)
@@ -292,6 +513,7 @@ public enum RuntimeTransportError: LocalizedError {
     case streamClosed
     case streamDecodingFailed(String)
     case handshakeFailed(String?)
+    case requestTimedOut(method: String, seconds: Double)
     case missingThread
     case missingTurn
     case requestFailed(String)
@@ -317,6 +539,8 @@ public enum RuntimeTransportError: LocalizedError {
                 return "Codex App Server initialize handshake failed: \(message)"
             }
             return "Codex App Server initialize handshake failed."
+        case .requestTimedOut(let method, let seconds):
+            return "Codex App Server request timed out after \(seconds)s: \(method)"
         case .missingThread:
             return "No active thread is bound to the chat card."
         case .missingTurn:
@@ -326,7 +550,7 @@ public enum RuntimeTransportError: LocalizedError {
         }
     }
 
-    private static func commandDescription(executable: String, arguments: [String]) -> String {
+    static func commandDescription(executable: String, arguments: [String]) -> String {
         ([executable] + arguments).joined(separator: " ")
     }
 }
@@ -362,6 +586,7 @@ public actor AppServerRuntimeService: CodexRuntimeEnvironment {
     public typealias TransportFactory = @Sendable () -> any AppServerTransporting
 
     private let transportFactory: TransportFactory
+    private nonisolated let logger = Logger(subsystem: "com.muxia.host", category: "AppServerRuntime")
     private var sessions: [UUID: AppServerSessionState] = [:]
     private var continuations: [UUID: AsyncStream<CodexAppServerEvent>.Continuation] = [:]
 
@@ -557,6 +782,7 @@ public actor AppServerRuntimeService: CodexRuntimeEnvironment {
             }
             sessions[sessionID] = state
 
+            logger.info("Starting Codex App Server initialize handshake")
             _ = try await request(
                 sessionID: sessionID,
                 method: "initialize",
@@ -568,9 +794,12 @@ public actor AppServerRuntimeService: CodexRuntimeEnvironment {
                     "capabilities": .object([
                         "experimentalApi": .bool(true)
                     ])
-                ])
+                ]),
+                timeoutSeconds: 8
             )
+            logger.info("Codex App Server initialize handshake completed")
             try await sessions[sessionID]?.transport.sendNotification(method: "initialized", params: nil)
+            logger.info("Codex App Server initialized notification sent")
             sessions[sessionID]?.handshakeComplete = true
             continuations[sessionID]?.yield(.runtimeStatus(.running))
         } catch {
@@ -596,6 +825,9 @@ public actor AppServerRuntimeService: CodexRuntimeEnvironment {
     }
 
     private func handleNotification(method: String, params: JSONValue?, sessionID: UUID) async {
+        if let params {
+            logger.debug("Codex App Server notification params=\(self.jsonLogString(for: params), privacy: .public)")
+        }
         guard let paramsObject = params?.objectValue else { return }
         switch method {
         case "thread/started":
@@ -627,6 +859,13 @@ public actor AppServerRuntimeService: CodexRuntimeEnvironment {
             {
                 let item = makeItem(from: itemObject, turnID: stableUUID(from: turnRemoteID))
                 continuations[sessionID]?.yield(.itemUpdated(item))
+                if method == "item/completed", item.kind == .response {
+                    if sessions[sessionID]?.activeTurnLocalID == stableUUID(from: turnRemoteID) {
+                        continuations[sessionID]?.yield(.turnCompleted(stableUUID(from: turnRemoteID)))
+                        sessions[sessionID]?.activeRemoteTurnID = nil
+                        sessions[sessionID]?.activeTurnLocalID = nil
+                    }
+                }
             }
         case "item/agentMessage/delta":
             if
@@ -730,7 +969,12 @@ public actor AppServerRuntimeService: CodexRuntimeEnvironment {
         }
     }
 
-    private func request(sessionID: UUID, method: String, params: JSONValue?) async throws -> JSONValue? {
+    private func request(
+        sessionID: UUID,
+        method: String,
+        params: JSONValue?,
+        timeoutSeconds: Double? = nil
+    ) async throws -> JSONValue? {
         guard var state = sessions[sessionID] else {
             throw RuntimeTransportError.notConnected
         }
@@ -749,7 +993,29 @@ public actor AppServerRuntimeService: CodexRuntimeEnvironment {
                     continuation?.resume(throwing: error)
                 }
             }
+            if let timeoutSeconds {
+                Task {
+                    let nanoseconds = UInt64(timeoutSeconds * 1_000_000_000)
+                    try? await Task.sleep(nanoseconds: nanoseconds)
+                    self.timeoutPendingResponse(
+                        requestID,
+                        sessionID: sessionID,
+                        method: method,
+                        seconds: timeoutSeconds
+                    )
+                }
+            }
         }
+    }
+
+    private func timeoutPendingResponse(
+        _ requestID: JSONRPCID,
+        sessionID: UUID,
+        method: String,
+        seconds: Double
+    ) {
+        guard let continuation = sessions[sessionID]?.pendingResponses.removeValue(forKey: requestID) else { return }
+        continuation.resume(throwing: RuntimeTransportError.requestTimedOut(method: method, seconds: seconds))
     }
 
     private func ensureHandshake(for sessionID: UUID) async throws {
@@ -775,7 +1041,7 @@ public actor AppServerRuntimeService: CodexRuntimeEnvironment {
             params: .object([
                 "cwd": .string(project.rootPath),
                 "ephemeral": .bool(false),
-                "sessionStartSource": .string("app")
+                "sessionStartSource": .string("startup")
             ])
         )
 
@@ -882,6 +1148,16 @@ public actor AppServerRuntimeService: CodexRuntimeEnvironment {
         case .fileChange: return "File Change Approval"
         case .permissions: return "Permission Approval"
         }
+    }
+
+    private func jsonLogString(for value: JSONValue) -> String {
+        guard
+            let data = try? JSONEncoder().encode(value),
+            let text = String(data: data, encoding: .utf8)
+        else {
+            return "<unencodable>"
+        }
+        return text
     }
 }
 
